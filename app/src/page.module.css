@@ -1,0 +1,23 @@
+.main {
+  flex-grow: 1;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.textarea {
+  border: none;
+  border-radius: 2em;
+
+  font-size: 1em;
+
+  background-color: black;
+  color: white;
+
+  padding: 1em;
+}
+
+.textarea:focus {
+  outline: none;
+}

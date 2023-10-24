@@ -1,0 +1,75 @@
+.header {
+  width: 100%;
+
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+
+  padding: 0.5em 0;
+}
+
+.title {
+  text-decoration: none;
+  color: black;
+
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+
+.ul {
+  list-style: none;
+
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 1em;
+  margin: 0;
+}
+
+.li {
+  color: black;
+}
+
+.link {
+  text-decoration: none;
+  background-color: var(--python-yellow);
+  color: black;
+
+  padding: 0.3em;
+  border-radius: 0.6em;
+}
+
+.link:hover {
+  background-color: var(--python-blue);
+}
+
+.active {
+  text-decoration: none;
+  background-color: var(--python-blue);
+  color: white;
+
+  padding: 0.3em;
+  border-radius: 0.6em;
+}
+
+.button {
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+
+  font-size: 1em;
+  background-color: var(--python-yellow);
+
+  padding: 0.3em 0.3em 0.1em 0.3em;
+  border-radius: 0.6em;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+
+  background-color: grey;
+}
