@@ -63,13 +63,20 @@ export function skip(
 }
 
 export function play(
+  ast: AST,
+  lex: LEX,
+  Push: Function,
+  Pop: Function,
+  updateTree: Function,
+  Disabled: boolean,
+  setDisabled: Function,
 ) {
   if (timer) {
     return;
   }
   timer = setInterval(() => {
-    // step();
-    if (true) {
+    step(ast, lex, Push, Pop, updateTree, setDisabled);
+    if (Disabled || ast.iter >= lex.tokens.length) {
       clearInterval(timer as NodeJS.Timeout);
     }
   }, 100);

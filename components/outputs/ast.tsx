@@ -7,7 +7,7 @@ export type GRAMMAR = Record<string, PRODUCTION_RULES>;
 
 export type NODE = {
   name: string;
-  attributes: Record<string, string>;
+  attributes: Record<string, string | number | true>;
   children: NODE[];
 }
 

@@ -37,7 +37,7 @@ export default function Page() {
   const resetHandle = () => reset(ast, updateTree, setDisabled);
   const stepHandle = () => step(ast, lex, Push, Pop, updateTree, setDisabled);
   const skipHandle = () => skip();
-  const playHandle = () => play();
+  const playHandle = () => play(ast, lex, Push, Pop, updateTree, Disabled, setDisabled);
   const pauseHandle = () => pause();
 
   return (
@@ -45,9 +45,9 @@ export default function Page() {
       <Header disabled={Disabled}
         reset={resetHandle}
         step={stepHandle}
-      // skip={skipHandle}
-      // play={playHandle}
-      // pause={pauseHandle}
+        // skip={skipHandle}
+        play={playHandle}
+        pause={pauseHandle}
       />
       <main className={styles.main}>
         {/* Stack */}

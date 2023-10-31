@@ -99,21 +99,15 @@ function* START(parent?: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "START", attributes: {}, children: [] };
+  const node: NODE = { name: "START", attributes: { indent: 0 }, children: [] };
   if (parent) parent.children.push(node);
   else ast.tree = node;
 
   Push("START?");
-  Push("newline");
-  Push("comment?");
-  Push("whitespace?");
-  Push("STATEMENT");
+  Push("STATEMENT?");
   yield;
 
-  for (const _ of STATEMENT(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
-  for (const _ of newline(node)) yield;
+  try { for (const _ of STATEMENT(node)) yield; } catch (e) { /* pass */ }
   try { for (const _ of START(node)) yield; } catch (e) { /* pass */ }
 }
 
@@ -130,22 +124,23 @@ function* BLOCK(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "BLOCK", attributes: {}, children: [] };
+  const lookahead = lex.tokens[ast.iter];
+
+  if (lookahead.type !== "WHITESPACE")
+    return;
+  if (lookahead.lexeme.length < (parent.attributes.indent as number))
+    return;
+
+  const node: NODE = { name: "BLOCK", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("BLOCK?");
-  Push("newline");
-  Push("comment?");
-  Push("whitespace?");
-  Push("STATEMENT");
+  Push("STATEMENT?");
   Push("whitespace");
   yield;
 
   for (const _ of whitespace(node)) yield;
-  for (const _ of STATEMENT(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
-  for (const _ of newline(node)) yield;
+  try { for (const _ of STATEMENT(node)) yield; } catch (e) { /* pass */ }
   try { for (const _ of BLOCK(node)) yield; } catch (e) { /* pass */ }
 }
 
@@ -162,12 +157,16 @@ function* STATEMENT(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "STATEMENT", attributes: {}, children: [] };
+  const node: NODE = { name: "STATEMENT", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   const lookahead = lex.tokens[ast.iter];
 
-  if (
+  if (lookahead.type === "NEWLINE") {
+    Push("newline");
+    yield;
+    for (const _ of newline(node)) yield;
+  } else if (
     lookahead.type !== "RESERVED" ||
     (
       lookahead.lexeme !== "if" &&
@@ -176,9 +175,15 @@ function* STATEMENT(parent: NODE): GENERATOR {
       lookahead.lexeme !== "def"
     )
   ) {
+    Push("newline");
+    Push("comment?");
+    Push("whitespace?");
     Push("SIMPLE");
     yield;
     for (const _ of SIMPLE(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of newline(node)) yield;
   } else {
     Push("COMPOUND");
     yield;
@@ -272,7 +277,7 @@ function* COMPOUND(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "COMPOUND", attributes: {}, children: [] };
+  const node: NODE = { name: "COMPOUND", attributes: { indent: (parent.attributes.indent as number) + 4 }, children: [] };
   parent.children.push(node);
 
   const lookahead = lex.tokens[ast.iter];
@@ -309,7 +314,7 @@ function* IF(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "IF", attributes: {}, children: [] };
+  const node: NODE = { name: "IF", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("ELIF?");
@@ -349,7 +354,7 @@ function* ELIF(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "ELIF", attributes: {}, children: [] };
+  const node: NODE = { name: "ELIF", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   const lookahead = lex.tokens[ast.iter];
@@ -365,8 +370,10 @@ function* ELIF(parent: NODE): GENERATOR {
     Push("EXPRESSION");
     Push("whitespace");
     Push("reserved:elif");
+    Push("whitespace?");
     yield;
 
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
     for (const _ of reserved(node)) yield;
     for (const _ of whitespace(node)) yield;
     for (const _ of EXPRESSION(node)) yield;
@@ -397,7 +404,12 @@ function* ELSE(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "ELSE", attributes: {}, children: [] };
+  if (
+    lex.tokens[ast.iter].lexeme !== "else" &&
+    lex.tokens[ast.iter + 1].lexeme !== "else"
+  ) return;
+
+  const node: NODE = { name: "ELSE", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("BLOCK");
@@ -407,8 +419,10 @@ function* ELSE(parent: NODE): GENERATOR {
   Push("punctuation::");
   Push("whitespace?");
   Push("reserved:else");
+  Push("whitespace?");
   yield;
 
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
   for (const _ of reserved(node)) yield;
   try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
   for (const _ of punctuation(node)) yield;
@@ -431,7 +445,7 @@ function* WHILE(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "WHILE", attributes: {}, children: [] };
+  const node: NODE = { name: "WHILE", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("ELSE?");
@@ -471,7 +485,7 @@ function* FOR(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "FOR", attributes: {}, children: [] };
+  const node: NODE = { name: "FOR", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("ELSE?");
@@ -519,7 +533,7 @@ function* FUNCTION(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "FUNCTION", attributes: {}, children: [] };
+  const node: NODE = { name: "FUNCTION", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("BLOCK");
@@ -594,7 +608,7 @@ function* ARGS_PRIME(parent: NODE): GENERATOR {
   }
 
   if (
-    lex.tokens[ast.iter].lexeme !== "," ||
+    lex.tokens[ast.iter].lexeme !== "," &&
     lex.tokens[ast.iter + 1].lexeme !== ","
   ) return;
 
@@ -687,7 +701,7 @@ function* PARAMS_PRIME(parent: NODE): GENERATOR {
   }
 
   if (
-    lex.tokens[ast.iter].lexeme !== "," ||
+    lex.tokens[ast.iter].lexeme !== "," &&
     lex.tokens[ast.iter + 1].lexeme !== ","
   ) return;
 
@@ -747,13 +761,15 @@ function* EXPRESSION_PRIME(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "EXPRESSION_PRIME", attributes: {}, children: [] };
-  parent.children.push(node);
-
   const lookahead = lex.tokens[ast.iter];
 
-  if (lookahead.type !== "OPERATOR")
-    return;
+  if (
+    lookahead.lexeme !== "and" &&
+    lookahead.lexeme !== "or"
+  ) return;
+
+  const node: NODE = { name: "EXPRESSION_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
 
   Push("EXPRESSION_PRIME?");
   Push("whitespace?");
@@ -812,13 +828,13 @@ function* COMPARISION_PRIME(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "COMPARISION_PRIME", attributes: {}, children: [] };
-  parent.children.push(node);
-
   const lookahead = lex.tokens[ast.iter];
 
   if (lookahead.type !== "COMPARATOR")
     return;
+
+  const node: NODE = { name: "COMPARISION_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
 
   Push("COMPARISION_PRIME?");
   Push("whitespace?");
@@ -884,13 +900,13 @@ function* BITWISE_PRIME(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "BITWISE_PRIME", attributes: {}, children: [] };
-  parent.children.push(node);
-
   const lookahead = lex.tokens[ast.iter];
 
   if (lookahead.type !== "BITWISE")
     return;
+
+  const node: NODE = { name: "BITWISE_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
 
   Push("BITWISE_PRIME?");
   Push("whitespace?");
@@ -954,13 +970,15 @@ function* OPERAND_PRIME(parent: NODE): GENERATOR {
     else return;
   }
 
-  const node: NODE = { name: "OPERAND_PRIME", attributes: {}, children: [] };
-  parent.children.push(node);
-
   const lookahead = lex.tokens[ast.iter];
 
-  if (lookahead.type !== "OPERATOR")
-    return;
+  if (
+    lookahead.lexeme !== "+" &&
+    lookahead.lexeme !== "-"
+  ) return;
+
+  const node: NODE = { name: "OPERAND_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
 
   Push("OPERAND_PRIME?");
   Push("whitespace?");
@@ -1019,8 +1037,12 @@ function* TERM_PRIME(parent: NODE): GENERATOR {
   }
 
   const lookahead = lex.tokens[ast.iter];
-  if (lookahead.type !== "OPERATOR")
-    return;
+  if (
+    lookahead.lexeme !== "*" &&
+    lookahead.lexeme !== "//" &&
+    lookahead.lexeme !== "/" &&
+    lookahead.lexeme !== "%"
+  ) return;
 
   const node: NODE = { name: "TERM_PRIME", attributes: {}, children: [] };
   parent.children.push(node);

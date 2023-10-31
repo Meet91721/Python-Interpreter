@@ -6,15 +6,16 @@ import {
 export const grammer: GRAMMAR = {};
 
 grammer["START"] = [
-  ["STATEMENT", "whitespace?", "comment?", "newline", "START?"],
+  ["STATEMENT?", "START?"],
 ];
 
 grammer["BLOCK"] = [
-  ["whitespace", "STATEMENT", "whitespace?", "comment?", "newline", "BLOCK?"],
+  ["whitespace", "STATEMENT?", "BLOCK?"],
 ];
 grammer["STATEMENT"] = [
-  ["SIMPLE"],
+  ["SIMPLE", "whitespace?", "comment?", "newline"],
   ["COMPOUND"],
+  ["newline"],
 ];
 
 grammer["SIMPLE"] = [
@@ -41,13 +42,13 @@ grammer["IF"] = [
     "BLOCK", "ELIF?"],
 ];
 grammer["ELIF"] = [
-  ["reserved:elif", "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
+  ["whitespace", "reserved:elif", "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK", "ELIF?"],
   ["ELSE?"],
 ];
 grammer["ELSE"] = [
-  ["reserved:else", "whitespace?", "punctuation::",
+  ["whitespace", "reserved:else", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK"],
 ];
