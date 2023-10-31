@@ -1,7 +1,9 @@
+"use client";
+
 import { AST, NODE } from "@/components/outputs/ast";
 import { LEX } from "@/components/outputs/lex";
 
-import { grammer } from "./grammer";
+declare type GENERATOR = IterableIterator<NODE | undefined>;
 
 let ast: AST;
 let lex: LEX;
@@ -19,383 +21,188 @@ export function* init(
   Push = _Push;
   Pop = _Pop;
 
-  Push("PROGRAM");
+  Push("START");
   yield;
+  for (const _ of START()) yield;
+}
 
-  for (const message of PROGRAM()) yield message;
+export function raise(message: string) {
+  throw new Error(message);
 }
 
 /////////////////////////////////////////////////////////////////////
-// Tokens
+// Terminals
 /////////////////////////////////////////////////////////////////////
-function* newline(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
+function token(lower: string, upper: string) {
+  return function* (parent: NODE) {
+    const top = Pop() as string;
+    if (top === undefined)
+      raise(`Expected token of type ${lower} but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing newline at ${ast.iter}`);
-  else if (top.includes("newline") === false) throw new Error(`Top of stack is not newline, got ${top} at ${ast.iter}`);
+    const [type, expected] = top.split(/^([_a-zA-Z]+)(?::(.*?))?\??$/).filter(x => x);
+    const required = top[top.length - 1] !== "?";
+    if (type !== lower) {
+      if (required)
+        raise(`Expected token of type ${lower} but top of the stack is ${type} @${ast.iter}`);
+      else return;
+    }
 
-  if (token.type === "NEWLINE") {
-    ast.iter += 1;
-    const node: NODE = { name: "newline", attributes: {}, children: [] };
+    const token = lex.tokens[ast.iter];
+    if (token.type !== upper) {
+      if (required)
+        raise(`Expected token of type ${upper} but got ${token.type} @(${token.line}, ${token.column})`);
+      else return;
+    }
+    if (expected && token.lexeme !== expected) {
+      if (required)
+        raise(`Expected ${expected} but got ${token.lexeme} @(${token.line}, ${token.column})`);
+      else return;
+    }
+
+    // Consume the token
+    const node: NODE = { name: lower, attributes: { lexval: token.lexeme }, children: [] };
     parent.children.push(node);
-    yield;
+    ast.iter++;
+    yield node;
   }
-  else if (required) throw new Error(`Expected newline, got ${token.type} at ${token.line}:${token.column}`);
 }
 
-function* whitespace(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing whitespace at ${ast.iter}`);
-  else if (top.includes("whitespace") === false) throw new Error(`Top of stack is not whitespace, got ${top} at ${ast.iter}`);
-
-  if (token.type === "WHITESPACE") {
-    ast.iter += 1;
-    const node: NODE = { name: "whitespace", attributes: {}, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected whitespace, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* comment(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing comment at ${ast.iter}`);
-  else if (top.includes("comment") === false) throw new Error(`Top of stack is not comment, got ${top} at ${ast.iter}`);
-
-  if (token.type === "COMMENT") {
-    ast.iter += 1;
-    const node: NODE = { name: "comment", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected comment, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* reserved(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing reserved at ${ast.iter}`);
-  else if (top.includes("reserved") === false) throw new Error(`Top of stack is not reserved, got ${top} at ${ast.iter}`);
-
-  if (token.type === "RESERVED") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "reserved", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected reserved, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* none(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing none at ${ast.iter}`);
-  else if (top.includes("none") === false) throw new Error(`Top of stack is not none, got ${top} at ${ast.iter}`);
-
-  if (token.type === "NONE") {
-    ast.iter += 1;
-    const node: NODE = { name: "none", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected none, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* boolean(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing boolean at ${ast.iter}`);
-  else if (top.includes("boolean") === false) throw new Error(`Top of stack is not boolean, got ${top} at ${ast.iter}`);
-
-  if (token.type === "BOOLEAN") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "boolean", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected boolean, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* int(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing int at ${ast.iter}`);
-  else if (top.includes("int") === false) throw new Error(`Top of stack is not int, got ${top} at ${ast.iter}`);
-
-  if (token.type === "INT") {
-    ast.iter += 1;
-    const node: NODE = { name: "int", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected int, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* float(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing float at ${ast.iter}`);
-  else if (top.includes("float") === false) throw new Error(`Top of stack is not float, got ${top} at ${ast.iter}`);
-
-  if (token.type === "FLOAT") {
-    ast.iter += 1;
-    const node: NODE = { name: "float", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected float, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* string(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing string at ${ast.iter}`);
-  else if (top.includes("string") === false) throw new Error(`Top of stack is not string, got ${top} at ${ast.iter}`);
-
-  if (token.type === "STRING") {
-    ast.iter += 1;
-    const node: NODE = { name: "string", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected string, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* operator(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing operator at ${ast.iter}`);
-  else if (top.includes("operator") === false) throw new Error(`Top of stack is not operator, got ${top} at ${ast.iter}`);
-
-  if (token.type === "OPERATOR") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "operator", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected operator, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* comparator(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing comparator at ${ast.iter}`);
-  else if (top.includes("comparator") === false) throw new Error(`Top of stack is not comparator, got ${top} at ${ast.iter}`);
-
-  if (token.type === "COMPARATOR") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "comparator", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected comparator, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* bitwise(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing bitwise at ${ast.iter}`);
-  else if (top.includes("bitwise") === false) throw new Error(`Top of stack is not bitwise, got ${top} at ${ast.iter}`);
-
-  if (token.type === "BITWISE") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "bitwise", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected bitwise, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* identifier(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-
-  if (top === null) throw new Error(`Stack empty before reducing identifier at ${ast.iter}`);
-  else if (top.includes("identifier") === false) throw new Error(`Top of stack is not identifier, got ${top} at ${ast.iter}`);
-
-  if (token.type === "IDENTIFIER") {
-    ast.iter += 1;
-    const node: NODE = { name: "identifier", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected identifier, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* assignment(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing assignment at ${ast.iter}`);
-  else if (top.includes("assignment") === false) throw new Error(`Top of stack is not assignment, got ${top} at ${ast.iter}`);
-
-  if (token.type === "ASSIGNMENT") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "assignment", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected assignment, got ${token.type} at ${token.line}:${token.column}`);
-}
-
-function* punctuation(parent: NODE) {
-  const top = Pop() as string;
-  const token = lex.tokens[ast.iter];
-  const required = top[top.length - 1] !== "?";
-  const expected = top.split(/(^.*?\:|\?$)/)[2];
-
-  if (top === null) throw new Error(`Stack empty before reducing punctuation at ${ast.iter}`);
-  else if (top.includes("punctuation") === false) throw new Error(`Top of stack is not punctuation, got ${top} at ${ast.iter}`);
-
-  if (token.type === "PUNCTUATION") {
-    if (expected && token.lexeme !== expected) throw new Error(`Expected '${expected}', got ${token.lexeme} at ${token.line}:${token.column}`);
-
-    ast.iter += 1;
-    const node: NODE = { name: "punctuation", attributes: { lex: token.lexeme }, children: [] };
-    parent.children.push(node);
-    yield;
-  }
-  else if (required) throw new Error(`Expected punctuation, got ${token.type} at ${token.line}:${token.column}`);
-}
+const newline = token("newline", "NEWLINE");
+const whitespace = token("whitespace", "WHITESPACE");
+const comment = token("comment", "COMMENT");
+const reserved = token("reserved", "RESERVED");
+const none = token("none", "NONE");
+const boolean = token("boolean", "BOOLEAN");
+const int = token("int", "INT");
+const float = token("float", "FLOAT");
+const string = token("string", "STRING");
+const operator = token("operator", "OPERATOR");
+const bitwise = token("bitwise", "BITWISE");
+const comparator = token("comparator", "COMPARATOR");
+const identifier = token("identifier", "IDENTIFIER");
+const assignment = token("assignment", "ASSIGNMENT");
+const punctuation = token("punctuation", "PUNCTUATION");
 
 /////////////////////////////////////////////////////////////////////
-// Productions
+// Non-terminals
 /////////////////////////////////////////////////////////////////////
-function* PROGRAM(parent?: NODE) {
+function* START(parent?: NODE): GENERATOR {
   const top = Pop() as string;
-  const required = top[top.length - 1] !== "?";
+  if (top === undefined)
+    raise(`Expected token of type START but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing PROGRAM at ${ast.iter}`);
-  else if (top.includes("PROGRAM") === false) throw new Error(`Top of stack is not PROGRAM, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "START") {
+    if (required)
+      raise(`Expected token of type START but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
-  const node: NODE = { name: "PROGRAM", attributes: {}, children: [] };
-  if (parent === undefined)
-    ast.tree = node;
-  else
-    parent.children.push(node);
+  const node: NODE = { name: "START", attributes: {}, children: [] };
+  if (parent) parent.children.push(node);
+  else ast.tree = node;
 
-  Push("PROGRAM?");
-  Push("newline?");
+  Push("START?");
+  Push("newline");
   Push("comment?");
   Push("whitespace?");
   Push("STATEMENT");
   yield;
 
-  for (const message of STATEMENT(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of PROGRAM(node)) yield message;
+  for (const _ of STATEMENT(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  try { for (const _ of START(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* BLOCK(parent: NODE) {
+function* BLOCK(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const required = top[top.length - 1] !== "?";
+  if (top === undefined)
+    raise(`Expected token of type BLOCK but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing BLOCK at ${ast.iter}`);
-  else if (top.includes("BLOCK") === false) throw new Error(`Top of stack is not BLOCK, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "BLOCK") {
+    if (required)
+      raise(`Expected token of type BLOCK but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "BLOCK", attributes: {}, children: [] };
   parent.children.push(node);
 
   Push("BLOCK?");
-  Push("newline?");
+  Push("newline");
   Push("comment?");
   Push("whitespace?");
   Push("STATEMENT");
   Push("whitespace");
   yield;
 
-  for (const message of whitespace(node)) yield message;
-  for (const message of STATEMENT(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of STATEMENT(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  try { for (const _ of BLOCK(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* STATEMENT(parent: NODE) {
+function* STATEMENT(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type STATEMENT but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing STATEMENT at ${ast.iter}`);
-  else if (top.includes("STATEMENT") === false) throw new Error(`Top of stack is not STATEMENT, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "STATEMENT") {
+    if (required)
+      raise(`Expected token of type STATEMENT but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "STATEMENT", attributes: {}, children: [] };
   parent.children.push(node);
 
-  try {
-    if (lookahead.type === "RESERVED") {
-      Push("COMPOUND");
-      yield;
+  const lookahead = lex.tokens[ast.iter];
 
-      for (const message of COMPOUND(node)) yield message;
-    } else {
-      Push("SIMPLE");
-      yield;
-
-      for (const message of SIMPLE(node)) yield message;
-    }
-  } catch (error) {
-    yield; // Episilon
+  if (
+    lookahead.type !== "RESERVED" ||
+    (
+      lookahead.lexeme !== "if" &&
+      lookahead.lexeme !== "while" &&
+      lookahead.lexeme !== "for" &&
+      lookahead.lexeme !== "def"
+    )
+  ) {
+    Push("SIMPLE");
+    yield;
+    for (const _ of SIMPLE(node)) yield;
+  } else {
+    Push("COMPOUND");
+    yield;
+    for (const _ of COMPOUND(node)) yield;
   }
 }
 
-function* SIMPLE(parent: NODE) {
+function* SIMPLE(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type SIMPLE but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing SIMPLE at ${ast.iter}`);
-  else if (top.includes("SIMPLE") === false) throw new Error(`Top of stack is not SIMPLE, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "SIMPLE") {
+    if (required)
+      raise(`Expected token of type SIMPLE but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "SIMPLE", attributes: {}, children: [] };
   parent.children.push(node);
+
+  const lookahead = lex.tokens[ast.iter];
 
   if (lookahead.type === "RESERVED") {
     if (lookahead.lexeme === "return") {
@@ -403,88 +210,104 @@ function* SIMPLE(parent: NODE) {
       Push("whitespace");
       Push("reserved:return");
       yield;
-
-      for (const message of reserved(node)) yield message;
-      for (const message of whitespace(node)) yield message;
-      for (const message of EXPRESSION(node)) yield message;
+      for (const _ of reserved(node)) yield;
+      for (const _ of whitespace(node)) yield;
+      for (const _ of EXPRESSION(node)) yield;
+    } else if (lookahead.lexeme === "pass") {
+      Push("reserved:pass");
+      yield;
+      for (const _ of reserved(node)) yield;
+    } else if (lookahead.lexeme === "break") {
+      Push("reserved:break");
+      yield;
+      for (const _ of reserved(node)) yield;
     } else {
-      Push("reserved");
+      Push("reserved:continue");
       yield;
-
-      for (const message of reserved(node)) yield message;
-    } // reserved
-  } else if (lookahead.type === "IDENTIFIER") {
-    if (
-      lex.tokens[ast.iter + 1].type === "ASSIGNMENT" ||
-      lex.tokens[ast.iter + 2].type === "ASSIGNMENT"
-    ) {
-      Push("EXPRESSION");
-      Push("whitespace?");
-      Push("assignment");
-      Push("whitespace?");
-      Push("identifier");
-      yield;
-
-      for (const message of identifier(node)) yield message;
-      for (const message of whitespace(node)) yield message;
-      for (const message of assignment(node)) yield message;
-      for (const message of whitespace(node)) yield message;
-      for (const message of EXPRESSION(node)) yield message;
-    } else {
-      Push("EXPRESSION");
-      yield;
-
-      for (const message of EXPRESSION(node)) yield message;
-    } // identifier
+      for (const _ of reserved(node)) yield;
+    }
   } else if (lookahead.type === "COMMENT") {
     Push("comment");
     yield;
-
-    for (const message of comment(node)) yield message;
+    for (const _ of comment(node)) yield;
+  } else if (lookahead.type === "WHITESPACE") {
+    Push("whitespace");
+    yield;
+    for (const _ of whitespace(node)) yield;
+  } else if (
+    lookahead.type === "IDENTIFIER" &&
+    (
+      lex.tokens[ast.iter + 1].type === "ASSIGNMENT" ||
+      lex.tokens[ast.iter + 2].type === "ASSIGNMENT"
+    )
+  ) {
+    Push("EXPRESSION");
+    Push("whitespace?");
+    Push("assignment");
+    Push("whitespace?");
+    Push("identifier");
+    yield;
+    for (const _ of identifier(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of assignment(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of EXPRESSION(node)) yield;
+  } else {
+    Push("EXPRESSION");
+    yield;
+    for (const _ of EXPRESSION(node)) yield;
   }
 }
 
-function* COMPOUND(parent: NODE) {
+function* COMPOUND(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type COMPOUND but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing COMPOUND at ${ast.iter}`);
-  else if (top.includes("COMPOUND") === false) throw new Error(`Top of stack is not COMPOUND, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "COMPOUND") {
+    if (required)
+      raise(`Expected token of type COMPOUND but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "COMPOUND", attributes: {}, children: [] };
   parent.children.push(node);
 
-  if (lookahead.type === "RESERVED") {
-    if (lookahead.lexeme === "if") {
-      Push("IF");
-      yield;
+  const lookahead = lex.tokens[ast.iter];
 
-      for (const message of IF(node)) yield message;
-    } else if (lookahead.lexeme === "while") {
-      Push("WHILE");
-      yield;
-
-      for (const message of WHILE(node)) yield message;
-    } else if (lookahead.lexeme === "for") {
-      Push("FOR");
-      yield;
-
-      for (const message of FOR(node)) yield message;
-    } else if (lookahead.lexeme === "def") {
-      Push("FUNCTION");
-      yield;
-
-      for (const message of FUNCTION(node)) yield message;
-    }
+  if (lookahead.lexeme === "if") {
+    Push("IF");
+    yield;
+    for (const _ of IF(node)) yield;
+  } else if (lookahead.lexeme === "while") {
+    Push("WHILE");
+    yield;
+    for (const _ of WHILE(node)) yield;
+  } else if (lookahead.lexeme === "for") {
+    Push("FOR");
+    yield;
+    for (const _ of FOR(node)) yield;
+  } else {
+    Push("FUNCTION");
+    yield;
+    for (const _ of FUNCTION(node)) yield;
   }
 }
 
-function* IF(parent: NODE) {
+function* IF(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type IF but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing IF at ${ast.iter}`);
-  else if (top.includes("IF") === false) throw new Error(`Top of stack is not IF, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "IF") {
+    if (required)
+      raise(`Expected token of type IF but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "IF", attributes: {}, children: [] };
   parent.children.push(node);
@@ -501,65 +324,78 @@ function* IF(parent: NODE) {
   Push("reserved:if");
   yield;
 
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of EXPRESSION(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
-  for (const message of ELIF(node)) yield message;
+  for (const _ of reserved(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of EXPRESSION(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  for (const _ of BLOCK(node)) yield;
+  try { for (const _ of ELIF(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* ELIF(parent: NODE) {
+function* ELIF(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type ELIF but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing ELIF at ${ast.iter}`);
-  else if (top.includes("ELIF") === false) throw new Error(`Top of stack is not ELIF, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "ELIF") {
+    if (required)
+      raise(`Expected token of type ELIF but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "ELIF", attributes: {}, children: [] };
   parent.children.push(node);
 
-  if (lookahead.type === "RESERVED") {
-    if (lookahead.lexeme === "elif") {
-      Push("ELIF?");
-      Push("BLOCK");
-      Push("newline");
-      Push("comment?");
-      Push("whitespace?");
-      Push("punctuation::");
-      Push("whitespace?");
-      Push("EXPRESSION");
-      Push("whitespace");
-      Push("reserved:elif");
-      yield;
+  const lookahead = lex.tokens[ast.iter];
 
-      for (const message of reserved(node)) yield message;
-      for (const message of whitespace(node)) yield message;
-      for (const message of EXPRESSION(node)) yield message;
-      for (const message of whitespace(node)) yield message;
-      for (const message of punctuation(node)) yield message;
-      for (const message of comment(node)) yield message;
-      for (const message of newline(node)) yield message;
-      for (const message of BLOCK(node)) yield message;
-      for (const message of ELIF(node)) yield message;
-    } else if (lookahead.lexeme === "else") {
-      Push("ELSE");
-      yield;
+  if (lookahead.lexeme === "elif") {
+    Push("ELIF?");
+    Push("BLOCK");
+    Push("newline");
+    Push("comment?");
+    Push("whitespace?");
+    Push("punctuation::");
+    Push("whitespace?");
+    Push("EXPRESSION");
+    Push("whitespace");
+    Push("reserved:elif");
+    yield;
 
-      for (const message of ELSE(node)) yield message;
-    }
+    for (const _ of reserved(node)) yield;
+    for (const _ of whitespace(node)) yield;
+    for (const _ of EXPRESSION(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of punctuation(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of newline(node)) yield;
+    for (const _ of BLOCK(node)) yield;
+    try { for (const _ of ELIF(node)) yield; } catch (e) { /* pass */ }
+  } else {
+    Push("ELSE?");
+    yield;
+    for (const _ of ELSE(node)) yield;
   }
 }
 
-function* ELSE(parent: NODE) {
+function* ELSE(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type ELSE but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing ELSE at ${ast.iter}`);
-  else if (top.includes("ELSE") === false) throw new Error(`Top of stack is not ELSE, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "ELSE") {
+    if (required)
+      raise(`Expected token of type ELSE but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "ELSE", attributes: {}, children: [] };
   parent.children.push(node);
@@ -573,21 +409,27 @@ function* ELSE(parent: NODE) {
   Push("reserved:else");
   yield;
 
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
+  for (const _ of reserved(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  for (const _ of BLOCK(node)) yield;
 }
 
-function* WHILE(parent: NODE) {
+function* WHILE(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type WHILE but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing WHILE at ${ast.iter}`);
-  else if (top.includes("WHILE") === false) throw new Error(`Top of stack is not WHILE, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "WHILE") {
+    if (required)
+      raise(`Expected token of type WHILE but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "WHILE", attributes: {}, children: [] };
   parent.children.push(node);
@@ -604,23 +446,30 @@ function* WHILE(parent: NODE) {
   Push("reserved:while");
   yield;
 
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of EXPRESSION(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
-  for (const message of ELSE(node)) yield message;
+  for (const _ of reserved(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of EXPRESSION(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  for (const _ of BLOCK(node)) yield;
+  try { for (const _ of ELSE(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* FOR(parent: NODE) {
+function* FOR(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type FOR but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing FOR at ${ast.iter}`);
-  else if (top.includes("FOR") === false) throw new Error(`Top of stack is not FOR, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "FOR") {
+    if (required)
+      raise(`Expected token of type FOR but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "FOR", attributes: {}, children: [] };
   parent.children.push(node);
@@ -633,35 +482,42 @@ function* FOR(parent: NODE) {
   Push("punctuation::");
   Push("whitespace?");
   Push("EXPRESSION");
-  Push("whitespace?");
+  Push("whitespace");
   Push("reserved:in");
-  Push("whitespace?");
+  Push("whitespace");
   Push("identifier");
   Push("whitespace");
   Push("reserved:for");
   yield;
 
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of identifier(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of EXPRESSION(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
-  for (const message of ELSE(node)) yield message;
+  for (const _ of reserved(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of identifier(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of reserved(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of EXPRESSION(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  for (const _ of BLOCK(node)) yield;
+  try { for (const _ of ELSE(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* FUNCTION(parent: NODE) {
+function* FUNCTION(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type FUNCTION but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing FUNCTION at ${ast.iter}`);
-  else if (top.includes("FUNCTION") === false) throw new Error(`Top of stack is not FUNCTION, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "FUNCTION") {
+    if (required)
+      raise(`Expected token of type FUNCTION but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "FUNCTION", attributes: {}, children: [] };
   parent.children.push(node);
@@ -683,29 +539,35 @@ function* FUNCTION(parent: NODE) {
   Push("reserved:def");
   yield;
 
-  for (const message of reserved(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of identifier(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of ARGS(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of comment(node)) yield message;
-  for (const message of newline(node)) yield message;
-  for (const message of BLOCK(node)) yield message;
+  for (const _ of reserved(node)) yield;
+  for (const _ of whitespace(node)) yield;
+  for (const _ of identifier(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ARGS(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of newline(node)) yield;
+  for (const _ of BLOCK(node)) yield;
 }
 
-function* ARGS(parent: NODE) {
+function* ARGS(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type ARGS but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing ARGS at ${ast.iter}`);
-  else if (top.includes("ARGS") === false) throw new Error(`Top of stack is not ARGS, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "ARGS") {
+    if (required)
+      raise(`Expected token of type ARGS but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "ARGS", attributes: {}, children: [] };
   parent.children.push(node);
@@ -714,15 +576,27 @@ function* ARGS(parent: NODE) {
   Push("identifier");
   yield;
 
-  for (const message of identifier(node)) yield message;
-  for (const message of ARGS_PRIME(node)) yield message;
+  for (const _ of identifier(node)) yield;
+  try { for (const _ of ARGS_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* ARGS_PRIME(parent: NODE) {
+function* ARGS_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type ARGS_PRIME but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing ARGS_PRIME at ${ast.iter}`);
-  else if (top.includes("ARGS_PRIME") === false) throw new Error(`Top of stack is not ARGS_PRIME, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "ARGS_PRIME") {
+    if (required)
+      raise(`Expected token of type ARGS_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  if (
+    lex.tokens[ast.iter].lexeme !== "," ||
+    lex.tokens[ast.iter + 1].lexeme !== ","
+  ) return;
 
   const node: NODE = { name: "ARGS_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -734,18 +608,25 @@ function* ARGS_PRIME(parent: NODE) {
   Push("whitespace?");
   yield;
 
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of identifier(node)) yield message;
-  for (const message of ARGS_PRIME(node)) yield message;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of identifier(node)) yield;
+  try { for (const _ of ARGS_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* FUNCTION_CALL(parent: NODE) {
+function* FUNCTION_CALL(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type FUNCTION_CALL but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing FUNCTION_CALL at ${ast.iter}`);
-  else if (top.includes("FUNCTION_CALL") === false) throw new Error(`Top of stack is not FUNCTION_CALL, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "FUNCTION_CALL") {
+    if (required)
+      raise(`Expected token of type FUNCTION_CALL but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "FUNCTION_CALL", attributes: {}, children: [] };
   parent.children.push(node);
@@ -759,20 +640,27 @@ function* FUNCTION_CALL(parent: NODE) {
   Push("identifier");
   yield;
 
-  for (const message of identifier(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of PARAMS(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
+  for (const _ of identifier(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of PARAMS(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
 }
 
-function* PARAMS(parent: NODE) {
+function* PARAMS(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type PARAMS but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing PARAMS at ${ast.iter}`);
-  else if (top.includes("PARAMS") === false) throw new Error(`Top of stack is not PARAMS, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "PARAMS") {
+    if (required)
+      raise(`Expected token of type PARAMS but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "PARAMS", attributes: {}, children: [] };
   parent.children.push(node);
@@ -781,15 +669,27 @@ function* PARAMS(parent: NODE) {
   Push("EXPRESSION");
   yield;
 
-  for (const message of EXPRESSION(node)) yield message;
-  for (const message of PARAMS_PRIME(node)) yield message;
+  for (const _ of EXPRESSION(node)) yield;
+  try { for (const _ of PARAMS_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* PARAMS_PRIME(parent: NODE) {
+function* PARAMS_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type PARAMS_PRIME but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing PARAMS_PRIME at ${ast.iter}`);
-  else if (top.includes("PARAMS_PRIME") === false) throw new Error(`Top of stack is not PARAMS_PRIME, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "PARAMS_PRIME") {
+    if (required)
+      raise(`Expected token of type PARAMS_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  if (
+    lex.tokens[ast.iter].lexeme !== "," ||
+    lex.tokens[ast.iter + 1].lexeme !== ","
+  ) return;
 
   const node: NODE = { name: "PARAMS_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -801,315 +701,370 @@ function* PARAMS_PRIME(parent: NODE) {
   Push("whitespace?");
   yield;
 
-  for (const message of whitespace(node)) yield message;
-  for (const message of punctuation(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of EXPRESSION(node)) yield message;
-  for (const message of PARAMS_PRIME(node)) yield message;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of punctuation(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of EXPRESSION(node)) yield;
+  try { for (const _ of PARAMS_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* EXPRESSION(parent: NODE) {
+function* EXPRESSION(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type EXPRESSION but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing EXPRESSION at ${ast.iter}`);
-  else if (top.includes("EXPRESSION") === false) throw new Error(`Top of stack is not EXPRESSION, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "EXPRESSION") {
+    if (required)
+      raise(`Expected token of type EXPRESSION but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "EXPRESSION", attributes: {}, children: [] };
   parent.children.push(node);
 
   Push("EXPRESSION_PRIME?");
   Push("whitespace?");
-  Push("COMPARISON");
+  Push("COMPARISION");
   yield;
 
-  for (const message of COMPARISON(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of EXPRESSION_PRIME(node)) yield message;
+  for (const _ of COMPARISION(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of EXPRESSION_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* EXPRESSION_PRIME(parent: NODE) {
+function* EXPRESSION_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type EXPRESSION_PRIME but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing EXPRESSION_PRIME at ${ast.iter}`);
-  else if (top.includes("EXPRESSION_PRIME") === false) throw new Error(`Top of stack is not EXPRESSION_PRIME, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "EXPRESSION_PRIME") {
+    if (required)
+      raise(`Expected token of type EXPRESSION_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "EXPRESSION_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
 
-  if (lookahead.lexeme === "and") {
-    Push("EXPRESSION_PRIME?");
-    Push("whitespace?");
-    Push("COMPARISON");
-    Push("whitespace?");
-    Push("operator:and");
-    yield;
-
-    for (const message of operator(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of COMPARISON(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of EXPRESSION_PRIME(node)) yield message;
-  } else if (lookahead.lexeme === "or") {
-    Push("EXPRESSION_PRIME?");
-    Push("whitespace?");
-    Push("COMPARISON");
-    Push("whitespace?");
-    Push("operator:or");
-    yield;
-
-    for (const message of operator(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of COMPARISON(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of EXPRESSION_PRIME(node)) yield message;
-  } else {
-    yield `Expected + or -, got ${lookahead.lexeme} at ${lookahead.line}:${lookahead.column}`;
-  }
-}
-
-function* COMPARISON(parent: NODE) {
-  const top = Pop() as string;
-
-  if (top === null) throw new Error(`Stack empty before reducing COMPARISON at ${ast.iter}`);
-  else if (top.includes("COMPARISON") === false) throw new Error(`Top of stack is not COMPARISON, got ${top} at ${ast.iter}`);
-
-  const node: NODE = { name: "COMPARISON", attributes: {}, children: [] };
-  parent.children.push(node);
-
-  Push("COMPARISON_PRIME?");
-  Push("whitespace?");
-  Push("BITWISE");
-  yield;
-
-  for (const message of BITWISE(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of COMPARISON_PRIME(node)) yield message;
-}
-
-function* COMPARISON_PRIME(parent: NODE) {
-  const top = Pop() as string;
   const lookahead = lex.tokens[ast.iter];
 
-  if (top === null) throw new Error(`Stack empty before reducing COMPARISON_PRIME at ${ast.iter}`);
-  else if (top.includes("COMPARISON_PRIME") === false) throw new Error(`Top of stack is not COMPARISON_PRIME, got ${top} at ${ast.iter}`);
+  if (lookahead.type !== "OPERATOR")
+    return;
 
-  const node: NODE = { name: "COMPARISON_PRIME", attributes: {}, children: [] };
+  Push("EXPRESSION_PRIME?");
+  Push("whitespace?");
+  Push("COMPARISION");
+  Push("whitespace?");
+  if (lookahead.lexeme === "and")
+    Push("operator:and");
+  else
+    Push("operator:or");
+  yield;
+
+  for (const _ of operator(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of COMPARISION(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of EXPRESSION_PRIME(node)) yield; } catch (e) { /* pass */ }
+}
+
+function* COMPARISION(parent: NODE): GENERATOR {
+  const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type COMPARISION but stack is empty @${ast.iter}`);
+
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "COMPARISION") {
+    if (required)
+      raise(`Expected token of type COMPARISION but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  const node: NODE = { name: "COMPARISION", attributes: {}, children: [] };
   parent.children.push(node);
 
-  Push("COMPARISON_PRIME?");
+  Push("COMPARISION_PRIME?");
+  Push("whitespace?");
+  Push("BITWISE");
+  yield;
+
+  for (const _ of BITWISE(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of COMPARISION_PRIME(node)) yield; } catch (e) { /* pass */ }
+}
+
+function* COMPARISION_PRIME(parent: NODE): GENERATOR {
+  const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type COMPARISION_PRIME but stack is empty @${ast.iter}`);
+
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+
+  if (type !== "COMPARISION_PRIME") {
+    if (required)
+      raise(`Expected token of type COMPARISION_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  const node: NODE = { name: "COMPARISION_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
+
+  const lookahead = lex.tokens[ast.iter];
+
+  if (lookahead.type !== "COMPARATOR")
+    return;
+
+  Push("COMPARISION_PRIME?");
   Push("whitespace?");
   Push("BITWISE");
   Push("whitespace?");
-  if (lookahead.lexeme === "<=") {
+  if (lookahead.lexeme === "<=")
     Push("comparator:<=");
-  } else if (lookahead.lexeme === ">=") {
+  else if (lookahead.lexeme === ">=")
     Push("comparator:>=");
-  } else if (lookahead.lexeme === "<") {
+  else if (lookahead.lexeme === "<")
     Push("comparator:<");
-  } else if (lookahead.lexeme === ">") {
-    Push("comparator:>");
-  } else if (lookahead.lexeme === "==") {
+  else if (lookahead.lexeme === "<")
+    Push("comparator:<");
+  else if (lookahead.lexeme === "==")
     Push("comparator:==");
-  } else if (lookahead.lexeme === "!=") {
+  else
     Push("comparator:!=");
-  }
   yield;
 
-  for (const message of comparator(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of BITWISE(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of COMPARISON_PRIME(node)) yield message;
+  for (const _ of comparator(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of BITWISE(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of COMPARISION_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* BITWISE(parent: NODE) {
+function* BITWISE(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type BITWISE but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing BITWISE at ${ast.iter}`);
-  else if (top.includes("BITWISE") === false) throw new Error(`Top of stack is not BITWISE, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "BITWISE") {
+    if (required)
+      raise(`Expected token of type BITWISE but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "BITWISE", attributes: {}, children: [] };
   parent.children.push(node);
 
   Push("BITWISE_PRIME?");
   Push("whitespace?");
-  Push("TERM");
+  Push("OPERAND");
   yield;
 
-  for (const message of TERM(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of BITWISE_PRIME(node)) yield message;
+  for (const _ of OPERAND(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of BITWISE_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* BITWISE_PRIME(parent: NODE) {
+function* BITWISE_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type BITWISE_PRIME but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing BITWISE_PRIME at ${ast.iter}`);
-  else if (top.includes("BITWISE_PRIME") === false) throw new Error(`Top of stack is not BITWISE_PRIME, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "BITWISE_PRIME") {
+    if (required)
+      raise(`Expected token of type BITWISE_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "BITWISE_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
 
-  Push("BITWISE_PRIME?");
-  Push("whitespace?");
-  Push("TERM");
-  Push("whitespace?");
-  if (lookahead.lexeme === "<<") {
-    Push("operator:<<");
-  } else if (lookahead.lexeme === ">>") {
-    Push("operator:>>");
-  } else if (lookahead.lexeme === "&") {
-    Push("operator:&");
-  } else if (lookahead.lexeme === "|") {
-    Push("operator:|");
-  } else if (lookahead.lexeme === "^") {
-    Push("operator:^");
-  }
-  yield;
-
-  for (const message of operator(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of TERM(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of BITWISE_PRIME(node)) yield message;
-}
-
-function* TERM(parent: NODE) {
-  const top = Pop() as string;
-
-  if (top === null) throw new Error(`Stack empty before reducing TERM at ${ast.iter}`);
-  else if (top.includes("TERM") === false) throw new Error(`Top of stack is not TERM, got ${top} at ${ast.iter}`);
-
-  const node: NODE = { name: "TERM", attributes: {}, children: [] };
-  parent.children.push(node);
-
-  Push("TERM_PRIME?");
-  Push("whitespace?");
-  Push("OPERAND");
-  yield;
-
-  for (const message of OPERAND(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of TERM_PRIME(node)) yield message;
-}
-
-function* TERM_PRIME(parent: NODE) {
-  const top = Pop() as string;
   const lookahead = lex.tokens[ast.iter];
 
-  if (top === null) throw new Error(`Stack empty before reducing TERM_PRIME at ${ast.iter}`);
-  else if (top.includes("TERM_PRIME") === false) throw new Error(`Top of stack is not TERM_PRIME, got ${top} at ${ast.iter}`);
+  if (lookahead.type !== "BITWISE")
+    return;
 
-  const node: NODE = { name: "TERM_PRIME", attributes: {}, children: [] };
-  parent.children.push(node);
-
-  Push("TERM_PRIME?");
+  Push("BITWISE_PRIME?");
   Push("whitespace?");
   Push("OPERAND");
   Push("whitespace?");
-  if (lookahead.lexeme === "+") {
-    Push("operator:+");
-  } else if (lookahead.lexeme === "-") {
-    Push("operator:-");
-  }
+  if (lookahead.lexeme === "<<")
+    Push("bitwise:<<");
+  else if (lookahead.lexeme === ">>")
+    Push("bitwise:>>");
+  else if (lookahead.lexeme === "&")
+    Push("bitwise:&");
+  else if (lookahead.lexeme === "|")
+    Push("bitwise:|");
+  else
+    Push("bitwise:^");
   yield;
 
-  for (const message of operator(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of OPERAND(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of TERM_PRIME(node)) yield message;
+  for (const _ of bitwise(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of OPERAND(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of BITWISE_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* OPERAND(parent: NODE) {
+function* OPERAND(parent: NODE): GENERATOR {
   const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type OPERAND but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing OPERAND at ${ast.iter}`);
-  else if (top.includes("OPERAND") === false) throw new Error(`Top of stack is not OPERAND, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "OPERAND") {
+    if (required)
+      raise(`Expected token of type OPERAND but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "OPERAND", attributes: {}, children: [] };
   parent.children.push(node);
 
   Push("OPERAND_PRIME?");
   Push("whitespace?");
-  Push("FACTOR");
+  Push("TERM");
   yield;
 
-  for (const message of FACTOR(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of OPERAND_PRIME(node)) yield message;
+  for (const _ of TERM(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of OPERAND_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* OPERAND_PRIME(parent: NODE) {
+function* OPERAND_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type OPERAND_PRIME but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing OPERAND_PRIME at ${ast.iter}`);
-  else if (top.includes("OPERAND_PRIME") === false) throw new Error(`Top of stack is not OPERAND_PRIME, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "OPERAND_PRIME") {
+    if (required)
+      raise(`Expected token of type OPERAND_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "OPERAND_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
 
+  const lookahead = lex.tokens[ast.iter];
+
+  if (lookahead.type !== "OPERATOR")
+    return;
+
   Push("OPERAND_PRIME?");
+  Push("whitespace?");
+  Push("TERM");
+  Push("whitespace?");
+  if (lookahead.lexeme === "+")
+    Push("operator:+");
+  else
+    Push("operator:-");
+  yield;
+
+  for (const _ of operator(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of TERM(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of OPERAND_PRIME(node)) yield; } catch (e) { /* pass */ }
+}
+
+function* TERM(parent: NODE): GENERATOR {
+  const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type TERM but stack is empty @${ast.iter}`);
+
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "TERM") {
+    if (required)
+      raise(`Expected token of type TERM but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  const node: NODE = { name: "TERM", attributes: {}, children: [] };
+  parent.children.push(node);
+
+  Push("TERM_PRIME?");
+  Push("whitespace?");
+  Push("FACTOR");
+  yield;
+
+  for (const _ of FACTOR(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of TERM_PRIME(node)) yield; } catch (e) { /* pass */ }
+}
+
+function* TERM_PRIME(parent: NODE): GENERATOR {
+  const top = Pop() as string;
+  if (top === undefined)
+    raise(`Expected token of type TERM_PRIME but stack is empty @${ast.iter}`);
+
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "TERM_PRIME") {
+    if (required)
+      raise(`Expected token of type TERM_PRIME but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
+
+  const lookahead = lex.tokens[ast.iter];
+  if (lookahead.type !== "OPERATOR")
+    return;
+
+  const node: NODE = { name: "TERM_PRIME", attributes: {}, children: [] };
+  parent.children.push(node);
+
+  Push("TERM_PRIME?");
   Push("whitespace?");
   Push("FACTOR");
   Push("whitespace?");
-  if (lookahead.lexeme === "*") {
+  if (lookahead.lexeme === "*")
     Push("operator:*");
-  } else if (lookahead.lexeme === "/") {
-    Push("operator:/");
-  } else if (lookahead.lexeme === "//") {
+  else if (lookahead.lexeme === "//")
     Push("operator://");
-  } else if (lookahead.lexeme === "%") {
+  else if (lookahead.lexeme === "/")
+    Push("operator:/");
+  else
     Push("operator:%");
-  }
   yield;
 
-  for (const message of operator(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of FACTOR(node)) yield message;
-  for (const message of whitespace(node)) yield message;
-  for (const message of OPERAND_PRIME(node)) yield message;
+  for (const _ of operator(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of FACTOR(node)) yield;
+  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  try { for (const _ of TERM_PRIME(node)) yield; } catch (e) { /* pass */ }
 }
 
-function* FACTOR(parent: NODE) {
+function* FACTOR(parent: NODE): GENERATOR {
   const top = Pop() as string;
-  const lookahead = lex.tokens[ast.iter];
+  if (top === undefined)
+    raise(`Expected token of type FACTOR but stack is empty @${ast.iter}`);
 
-  if (top === null) throw new Error(`Stack empty before reducing FACTOR at ${ast.iter}`);
-  else if (top.includes("FACTOR") === false) throw new Error(`Top of stack is not FACTOR, got ${top} at ${ast.iter}`);
+  const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
+  const required = _ !== "?";
+  if (type !== "FACTOR") {
+    if (required)
+      raise(`Expected token of type FACTOR but top of the stack is ${top} @${ast.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "FACTOR", attributes: {}, children: [] };
   parent.children.push(node);
 
-  if (lookahead.type === "NONE") {
-    Push("none");
-    yield;
+  const lookahead = lex.tokens[ast.iter];
 
-    for (const message of none(node)) yield message;
-  } else if (lookahead.type === "BOOLEAN") {
-    Push("boolean");
-    yield;
-
-    for (const message of boolean(node)) yield message;
-  } else if (lookahead.type === "INT") {
-    Push("int");
-    yield;
-
-    for (const message of int(node)) yield message;
-  } else if (lookahead.type === "FLOAT") {
-    Push("float");
-    yield;
-
-    for (const message of float(node)) yield message;
-  } else if (lookahead.type === "STRING") {
-    Push("string");
-    yield;
-
-    for (const message of string(node)) yield message;
-  } else if (lookahead.lexeme === "(") {
+  if (lookahead.lexeme === "(") {
     Push("punctuation:)");
     Push("whitespace?");
     Push("EXPRESSION");
@@ -1117,12 +1072,37 @@ function* FACTOR(parent: NODE) {
     Push("punctuation:(");
     yield;
 
-    for (const message of punctuation(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of EXPRESSION(node)) yield message;
-    for (const message of whitespace(node)) yield message;
-    for (const message of punctuation(node)) yield message;
-  } else if (lookahead.type === "IDENTIFIER") {
+    for (const _ of punctuation(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of EXPRESSION(node)) yield;
+    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of punctuation(node)) yield;
+  } else if (lookahead.type === "NONE") {
+    Push("none");
+    yield;
+
+    for (const _ of none(node)) yield;
+  } else if (lookahead.type === "BOOLEAN") {
+    Push("boolean");
+    yield;
+
+    for (const _ of boolean(node)) yield;
+  } else if (lookahead.type === "INT") {
+    Push("int");
+    yield;
+
+    for (const _ of int(node)) yield;
+  } else if (lookahead.type === "FLOAT") {
+    Push("float");
+    yield;
+
+    for (const _ of float(node)) yield;
+  } else if (lookahead.type === "STRING") {
+    Push("string");
+    yield;
+
+    for (const _ of string(node)) yield;
+  } else {
     if (
       lex.tokens[ast.iter + 1].lexeme === "(" ||
       lex.tokens[ast.iter + 2].lexeme === "("
@@ -1130,14 +1110,12 @@ function* FACTOR(parent: NODE) {
       Push("FUNCTION_CALL");
       yield;
 
-      for (const message of FUNCTION_CALL(node)) yield message;
+      for (const _ of FUNCTION_CALL(node)) yield;
     } else {
       Push("identifier");
       yield;
 
-      for (const message of identifier(node)) yield message;
+      for (const _ of identifier(node)) yield;
     }
-  } else {
-    throw new Error(`Expected FACTOR, got ${lookahead.type} at ${lookahead.line}:${lookahead.column}`);
   }
 }

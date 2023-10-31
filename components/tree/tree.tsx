@@ -4,6 +4,9 @@ import { NODE } from '../outputs/ast';
 
 export default function ReactD3Tree({ tree }: { tree: NODE }) {
   return (
-    <Tree data={tree} orientation={"vertical"} />
+    <Tree
+      data={tree}
+      orientation={"vertical"}
+    />
   );
 }

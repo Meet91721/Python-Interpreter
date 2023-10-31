@@ -5,19 +5,20 @@ import {
 // Grammer for python like language
 export const grammer: GRAMMAR = {};
 
-grammer["PROGRAM"] = [
-  ["STATEMENT", "whitespace?", "comment?", "newline?", "PROGRAM?"],
+grammer["START"] = [
+  ["STATEMENT", "whitespace?", "comment?", "newline", "START?"],
 ];
+
 grammer["BLOCK"] = [
-  ["whitespace", "STATEMENT", "whitespace?", "comment?", "newline?", "BLOCK?"],
+  ["whitespace", "STATEMENT", "whitespace?", "comment?", "newline", "BLOCK?"],
 ];
 grammer["STATEMENT"] = [
   ["SIMPLE"],
   ["COMPOUND"],
-  ["EPSILON"],
 ];
 
 grammer["SIMPLE"] = [
+  ["whitespace"],
   ["comment"],
   ["EXPRESSION"],
   ["identifier", "whitespace?", "assignment", "whitespace?", "EXPRESSION"],
@@ -43,7 +44,7 @@ grammer["ELIF"] = [
   ["reserved:elif", "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK", "ELIF?"],
-  ["ELSE"],
+  ["ELSE?"],
 ];
 grammer["ELSE"] = [
   ["reserved:else", "whitespace?", "punctuation::",
@@ -58,8 +59,8 @@ grammer["WHILE"] = [
 ];
 
 grammer["FOR"] = [
-  ["reserved:for", "whitespace", "identifier", "whitespace?", "reserved:in",
-    "whitespace?", "EXPRESSION", "whitespace?", "punctuation::",
+  ["reserved:for", "whitespace", "identifier", "whitespace", "reserved:in",
+    "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK", "ELSE?"],
 ];
@@ -94,6 +95,7 @@ grammer["EXPRESSION_PRIME"] = [
   ["operator:and", "whitespace?", "COMPARISION", "whitespace?", "EXPRESSION_PRIME?"],
   ["operator:or", "whitespace?", "COMPARISION", "whitespace?", "EXPRESSION_PRIME?"],
 ];
+
 grammer["COMPARISION"] = [
   ["BITWISE", "whitespace?", "COMPARISION_PRIME?"],
 ];
@@ -107,32 +109,34 @@ grammer["COMPARISION_PRIME"] = [
 ];
 
 grammer["BITWISE"] = [
-  ["TERM", "whitespace?", "BITWISE_PRIME?"],
+  ["OPERAND", "whitespace?", "BITWISE_PRIME?"],
 ];
 grammer["BITWISE_PRIME"] = [
-  ["bitwise:<<", "whitespace?", "TERM", "whitespace?", "BITWISE_PRIME?"],
-  ["bitwise:>>", "whitespace?", "TERM", "whitespace?", "BITWISE_PRIME?"],
-  ["bitwise:&", "whitespace?", "TERM", "whitespace?", "BITWISE_PRIME?"],
-  ["bitwise:|", "whitespace?", "TERM", "whitespace?", "BITWISE_PRIME?"],
-  ["bitwise:^", "whitespace?", "TERM", "whitespace?", "BITWISE_PRIME?"],
+  ["bitwise:<<", "whitespace?", "OPERAND", "whitespace?", "BITWISE_PRIME?"],
+  ["bitwise:>>", "whitespace?", "OPERAND", "whitespace?", "BITWISE_PRIME?"],
+  ["bitwise:&", "whitespace?", "OPERAND", "whitespace?", "BITWISE_PRIME?"],
+  ["bitwise:|", "whitespace?", "OPERAND", "whitespace?", "BITWISE_PRIME?"],
+  ["bitwise:^", "whitespace?", "OPERAND", "whitespace?", "BITWISE_PRIME?"],
+];
+
+grammer["OPERAND"] = [
+  ["TERM", "whitespace?", "OPERAND_PRIME?"],
+];
+grammer["OPERAND_PRIME"] = [
+  ["operator:+", "whitespace?", "TERM", "whitespace?", "OPERAND_PRIME?"],
+  ["operator:-", "whitespace?", "TERM", "whitespace?", "OPERAND_PRIME?"],
 ];
 
 grammer["TERM"] = [
-  ["OPERAND", "whitespace?", "TERM_PRIME?"],
+  ["FACTOR", "whitespace?", "TERM_PRIME?"],
 ];
 grammer["TERM_PRIME"] = [
-  ["operator:+", "whitespace?", "OPERAND", "whitespace?", "TERM_PRIME?"],
-  ["operator:-", "whitespace?", "OPERAND", "whitespace?", "TERM_PRIME?"],
+  ["operator:%", "whitespace?", "FACTOR", "whitespace?", "TERM_PRIME?"],
+  ["operator://", "whitespace?", "FACTOR", "whitespace?", "TERM_PRIME?"],
+  ["operator:/", "whitespace?", "FACTOR", "whitespace?", "TERM_PRIME?"],
+  ["operator:*", "whitespace?", "FACTOR", "whitespace?", "TERM_PRIME?"],
 ];
-grammer["OPERAND"] = [
-  ["FACTOR", "whitespace?", "OPERAND_PRIME?"],
-];
-grammer["OPERAND_PRIME"] = [
-  ["operator:%", "whitespace?", "FACTOR", "whitespace?", "OPERAND_PRIME?"],
-  ["operator://", "whitespace?", "FACTOR", "whitespace?", "OPERAND_PRIME?"],
-  ["operator:/", "whitespace?", "FACTOR", "whitespace?", "OPERAND_PRIME?"],
-  ["operator:*", "whitespace?", "FACTOR", "whitespace?", "OPERAND_PRIME?"],
-];
+
 grammer["FACTOR"] = [
   ["punctuation:(", "whitespace?", "EXPRESSION", "whitespace?", "punctuation:)"],
   ["FUNCTION_CALL"],

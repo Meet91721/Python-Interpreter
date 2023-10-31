@@ -19,15 +19,18 @@ export default function Page() {
   const [Stack, setStack] = useState(ast.stack);
   function Push(item: string) {
     ast.stack.push(item);
+    setStack(ast.stack);
   }
   function Pop() {
-    return ast.stack.pop();
+    const item = ast.stack.pop();
+    setStack(ast.stack);
+    return item;
   }
 
   const [Tree, setTree] = useState(ast.tree);
   function updateTree(tree: NODE) {
     ast.tree = { ...tree };
-    setTree(tree);
+    setTree(ast.tree);
   }
 
   const [Disabled, setDisabled] = useState(ast.iter >= lex.tokens.length);
@@ -42,11 +45,24 @@ export default function Page() {
       <Header disabled={Disabled}
         reset={resetHandle}
         step={stepHandle}
-        skip={skipHandle}
-        play={playHandle}
-        pause={pauseHandle}
+      // skip={skipHandle}
+      // play={playHandle}
+      // pause={pauseHandle}
       />
       <main className={styles.main}>
+        {/* Stack */}
+        <div className={styles.stack}>
+          {Stack.map((symbol, i) => {
+            return (
+              <span key={i}>{symbol}</span>
+            )
+          })}
+          {
+            Stack.length === 0 &&
+            <span>--==EMPTY STACK==--</span>
+          }
+        </div>
+
         {/* Token stream */}
         <div className={styles.code}>
           {lex.tokens.slice(ast.iter).map((token, i) => {
@@ -70,15 +86,6 @@ export default function Page() {
             className={styles.token}
             data-label={`EOF@(${lex.line}, ${lex.column})`}
           >$</span>
-        </div>
-
-        {/* Stack */}
-        <div className={styles.stack}>
-          {Stack.map((symbol, i) => {
-            return (
-              <span key={i}>{symbol}</span>
-            )
-          })}
         </div>
 
         {/* Tree */}

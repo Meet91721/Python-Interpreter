@@ -13,14 +13,12 @@ export type NODE = {
 
 export type AST = {
   iter: number;
-  indent: number[];
   stack: string[];
   tree: NODE | null;
 }
 
 const context: AST = {
   iter: 0,
-  indent: [],
   stack: [],
   tree: null,
 };

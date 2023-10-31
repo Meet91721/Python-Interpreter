@@ -14,8 +14,7 @@ export function reset(
   setDisabled: Function = () => { }
 ) {
   ast.iter = 0;
-  ast.indent.length = 0;
-  ast.stack.length = 0;
+  ast.stack = [];
   ast.tree = null;
 
   updateTree(null);
@@ -40,13 +39,18 @@ export function step(
   if (generator === null)
     generator = init(ast, lex, Push, Pop);
 
-  const { value: message, done } = generator.next();
-  updateTree(ast.tree);
+  try {
+    const { done } = generator.next();
+    updateTree(ast.tree);
 
-  if (done) {
+    if (done) {
+      generator = null;
+      setDisabled(true);
+    }
+  } catch (e) {
     generator = null;
     setDisabled(true);
-    alert(message);
+    alert(e.message);
   }
 }
 
