@@ -20,7 +20,6 @@ import styles from "./header.module.css"
 const stages = [
   { path: '/src', name: "SRC" },
   { path: "/lex", name: "LEX" },
-  { path: "/syn", name: "SYN" },
   { path: "/ast", name: "AST" },
 ]
 

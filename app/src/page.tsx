@@ -3,11 +3,12 @@
 import { useState, useContext } from "react";
 
 import Header from "@/components/header/header";
+
 import { srcOutput } from "@/components/outputs/src";
 import { lexOutput } from "@/components/outputs/lex";
 import { reset as lexResetHandle } from "../lex/logic";
 
-import styles from "./page.module.css";
+import styles from "./src.module.css";
 
 export default function Page() {
   const src = useContext(srcOutput);
@@ -15,11 +16,11 @@ export default function Page() {
   const [Code, setCode] = useState(src.code);
 
   function handleChange(code: string) {
-    src.code = code;
-    setCode(code);
+    src.code = code.replace(/\t/g, "    ");
+    setCode(src.code);
   }
 
-  function reset() {
+  function resetHandle() {
     handleChange(`# Sample Python code
 def factorial(n):
     eq = n == 0
@@ -39,17 +40,17 @@ for k in range(1000e-2):
 input('Press Enter to continue ...')
 `);
 
-    lexResetHandle(lex, () => { });
+    lexResetHandle(lex);
   }
 
   return (
     <>
-      <Header reset={reset} />
+      <Header reset={resetHandle} />
       <main className={styles.main}>
         <textarea
           className={styles.textarea}
-          rows={20}
-          cols={100}
+          rows={18}
+          cols={80}
           placeholder="# Enter Python code here ..."
           value={Code}
           onChange={(e) => handleChange(e.target.value)}

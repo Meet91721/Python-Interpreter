@@ -1,0 +1,94 @@
+.main {
+  flex-grow: 1;
+
+  display: grid;
+  grid-template-columns: 2fr 5fr 3fr;
+
+  margin: 1em;
+  gap: 1em;
+}
+
+.main>* {
+  max-height: calc(100vh - 50px - 3em);
+  overflow: auto;
+}
+
+.code {
+  background-color: black;
+  color: white;
+
+  white-space: pre;
+  font-family: monospace;
+  line-height: 1.3em;
+
+  margin: 0;
+  padding: 1em;
+  border-radius: 2em;
+}
+
+.token {
+  color: black;
+  padding: 0 0.3em;
+}
+
+.token:hover {
+  border: 3px solid white;
+}
+
+.token:hover::after {
+  content: attr(data-label);
+
+  position: absolute;
+  z-index: 1;
+
+  background-color: white;
+  color: black;
+
+  padding: 0.3em;
+  border-radius: 0.6em;
+
+  pointer-events: none;
+}
+
+.table {
+  display: block;
+}
+
+.table tr:nth-child(odd)>td {
+  border: 0.1em solid black;
+}
+
+.table tr:nth-child(even) {
+  background-color: var(--python-yellow);
+}
+
+.table td,
+.table th {
+  padding: 0.3em;
+}
+
+.patterns>ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.patterns>ul>li {
+  padding: 0.1em 0;
+}
+
+.matched {
+  background-color: white;
+  color: black;
+
+  padding: 0 0.3em;
+  margin: 0 0.6em;
+  border-radius: 1em;
+}
+
+.h3 {
+  margin: 0;
+  padding: 0;
+  font-size: 1.5em;
+  font-weight: bold;
+}

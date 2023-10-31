@@ -2,7 +2,7 @@
   flex-grow: 1;
 
   display: grid;
-  grid-template-columns: 2fr 5fr 3fr;
+  grid-template-columns: 3fr 2fr 3fr;
 
   margin: 1em;
   gap: 1em;
@@ -35,37 +35,35 @@
   border: 3px solid white;
 }
 
-.table {
-  display: block;
-}
+.token:hover::after {
+  content: attr(data-label);
 
-.table tr:nth-child(odd)>td {
-  border: 0.1em solid black;
-}
+  position: absolute;
+  z-index: 1;
 
-.table tr:nth-child(even) {
-  background-color: var(--python-yellow);
-}
-
-.table td {
-  padding: 0.3em;
-}
-
-.patterns>ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-}
-
-.patterns>ul>li {
-  padding: 0.3em 0.3em;
-}
-
-.matched {
   background-color: white;
   color: black;
 
-  padding: 0 0.3em;
-  margin: 0 0.3em;
-  border-radius: 1em;
+  padding: 0.3em;
+  border-radius: 0.6em;
+
+  pointer-events: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  gap: 0.3em;
+}
+
+.stack>* {
+  background-color: white;
+
+  padding: 0.5em;
+  border-radius: 0.6em;
+}
+
+.tree {
+  background-color: var(--python-yellow);
 }

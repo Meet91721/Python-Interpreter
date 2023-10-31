@@ -6,34 +6,28 @@ import Header from "@/components/header/header";
 import { srcOutput } from "@/components/outputs/src";
 import { lexOutput } from "@/components/outputs/lex";
 
-import { patterns } from "./patterns";
+import { astOutput } from "@/components/outputs/ast";
+import { reset as astResetHandle } from "../ast/logic";
+
+import { patterns, colorizeToken } from "./patterns";
 import { reset, step, skip, play, pause } from "./logic";
-import styles from "./page.module.css";
-
-const reversePattern = patterns.reduce((acc, pattern, i) => {
-  const { name } = pattern;
-  acc[name] = i;
-  return acc;
-}, {} as { [key: string]: number });
-reversePattern["UNKNOWN"] = -1;
-const factor = 360 / patterns.length;
-
-function colorize(i: number) {
-  const hue = (5 * factor * (i + 1)) % 360;
-  return `hsl(${hue}, 60%, 60%)`;
-}
+import styles from "./lex.module.css";
 
 export default function Page() {
   const { code } = useContext(srcOutput);
   const lex = useContext(lexOutput);
+  const ast = useContext(astOutput);
+
+  const [Matched, setMatched] = useState<boolean[]>(patterns.map(() => false));
 
   const [Disabled, setDisabled] = useState(lex.iter >= code.length);
-  const [Matched, setMatched] = useState<boolean[]>(Array.from([]));
-
-  const resetHandle = () => reset(lex, setDisabled);
-  const stepHandle = () => step(lex, code, patterns, setMatched, setDisabled);
-  const skipHandle = () => skip(lex, code, patterns, setMatched, setDisabled);
-  const playHandle = () => play(lex, code, patterns, setMatched, setDisabled);
+  const resetHandle = () => {
+    reset(lex, setMatched, setDisabled);
+    astResetHandle(ast);
+  }
+  const stepHandle = () => step(lex, code, setMatched, setDisabled);
+  const skipHandle = () => skip(lex, code, setMatched, setDisabled);
+  const playHandle = () => play(lex, code, setMatched, setDisabled);
   const pauseHandle = () => pause();
 
   return (
@@ -48,16 +42,15 @@ export default function Page() {
       <main className={styles.main}>
         {/* Patterns */}
         <div className={styles.patterns}>
-          <h3>Patterns</h3>
+          <span className={styles.h3}>Pattern Matching</span>
           <ul className={styles.list}>
-            {patterns.map((pattern, i) => {
-              const { name } = pattern;
+            {patterns.map(({ type }, i) => {
               return (
-                <li key={i} style={{ backgroundColor: colorize(i) }}>
+                <li key={i} style={{ backgroundColor: colorizeToken(type) }}>
                   <span className={styles.matched}>
                     {Matched[i] ? "✓" : "✗"}
                   </span>
-                  {name}
+                  {type}
                 </li>
               );
             })}
@@ -67,10 +60,17 @@ export default function Page() {
         {/* Tokens */}
         <p className={styles.code}>
           {lex.tokens.map((token, i) => {
-            const { name, lexeme } = token;
-            const color = colorize(reversePattern[name]);
+            const {
+              type, lexeme,
+              line, column,
+            } = token;
             return (
-              <span style={{ backgroundColor: color }} key={i} className={styles.token}>
+              <span
+                key={i}
+                style={{ backgroundColor: colorizeToken(type) }}
+                className={styles.token}
+                data-label={`${type}@(${line}, ${column})`}
+              >
                 {lexeme}
               </span>
             )
@@ -84,17 +84,17 @@ export default function Page() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Token</th>
-              <th>Lexical value</th>
+              <th>Token Type</th>
+              <th>Lexical Value</th>
             </tr>
           </thead>
           <tbody>
             {lex.table.map((row, i) => {
-              const { name: token, lexeme } = row;
+              const { type, lexeme } = row;
               return (
                 <tr key={i}>
                   <td>ID{i + 1}</td>
-                  <td>{token}</td>
+                  <td>{type}</td>
                   <td>{lexeme}</td>
                 </tr>
               );
