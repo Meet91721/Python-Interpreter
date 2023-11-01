@@ -1,43 +1,43 @@
 "use client";
 
-import { useState, useContext } from "react";
+import React, { useState, useContext } from "react";
 
 import Header from "@/components/header/header";
 import ReactD3Tree from "@/components/tree/tree";
 import { lexOutput } from "@/components/outputs/lex";
-import { astOutput, NODE } from "@/components/outputs/ast";
+import { parserOutput, NODE } from "@/components/outputs/parser";
 
 import { colorizeToken } from "../lex/patterns";
 
 import { reset, step, skip, play, pause } from "./logic";
-import styles from "./ast.module.css";
+import styles from "./parser.module.css";
 
 export default function Page() {
   const lex = useContext(lexOutput);
-  const ast = useContext(astOutput);
+  const parser = useContext(parserOutput);
 
-  const [Stack, setStack] = useState(ast.stack);
+  const [Stack, setStack] = useState(parser.stack);
   function Push(item: string) {
-    ast.stack.push(item);
-    setStack(ast.stack);
+    parser.stack.push(item);
+    setStack(parser.stack);
   }
   function Pop() {
-    const item = ast.stack.pop();
-    setStack(ast.stack);
+    const item = parser.stack.pop();
+    setStack(parser.stack);
     return item;
   }
 
-  const [Tree, setTree] = useState(ast.tree);
+  const [Tree, setTree] = useState(parser.tree);
   function updateTree(tree: NODE) {
-    ast.tree = { ...tree };
-    setTree(ast.tree);
+    parser.tree = { ...tree };
+    setTree(parser.tree);
   }
 
-  const [Disabled, setDisabled] = useState(ast.iter >= lex.tokens.length);
-  const resetHandle = () => reset(ast, updateTree, setDisabled);
-  const stepHandle = () => step(ast, lex, Push, Pop, updateTree, setDisabled);
-  const skipHandle = () => skip();
-  const playHandle = () => play(ast, lex, Push, Pop, updateTree, Disabled, setDisabled);
+  const [Disabled, setDisabled] = useState(parser.iter >= lex.tokens.length);
+  const resetHandle = () => reset(parser, updateTree, setDisabled);
+  const stepHandle = () => step(parser, lex, Push, Pop, updateTree, setDisabled);
+  const skipHandle = () => skip(parser, lex, Push, Pop, updateTree, setDisabled);
+  const playHandle = () => play(parser, lex, Push, Pop, updateTree, setDisabled);
   const pauseHandle = () => pause();
 
   return (
@@ -45,7 +45,7 @@ export default function Page() {
       <Header disabled={Disabled}
         reset={resetHandle}
         step={stepHandle}
-        // skip={skipHandle}
+        skip={skipHandle}
         play={playHandle}
         pause={pauseHandle}
       />
@@ -53,10 +53,19 @@ export default function Page() {
         {/* Stack */}
         <div className={styles.stack}>
           {Stack.map((symbol, i) => {
-            return (
-              <span key={i}>{symbol}</span>
-            )
-          })}
+
+            const span = <span key={i} ref={(el) => {
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
+            >
+              {symbol}
+            </span>;
+            return span;
+            // )
+          })
+          }
           {
             Stack.length === 0 &&
             <span>--==EMPTY STACK==--</span>
@@ -65,7 +74,7 @@ export default function Page() {
 
         {/* Token stream */}
         <div className={styles.code}>
-          {lex.tokens.slice(ast.iter).map((token, i) => {
+          {lex.tokens.slice(parser.iter).map((token, i) => {
             const {
               type, lexeme,
               line, column,
@@ -81,11 +90,6 @@ export default function Page() {
               </span>
             )
           })}
-          <span
-            style={{ backgroundColor: colorizeToken("UNKNOWN") }}
-            className={styles.token}
-            data-label={`EOF@(${lex.line}, ${lex.column})`}
-          >$</span>
         </div>
 
         {/* Tree */}

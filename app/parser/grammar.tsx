@@ -1,16 +1,16 @@
 import {
   GRAMMAR,
-} from "@/components/outputs/ast";
+} from "@/components/outputs/parser";
 
 // Grammer for python like language
 export const grammer: GRAMMAR = {};
 
 grammer["START"] = [
-  ["STATEMENT?", "START?"],
+  ["STATEMENT", "START?"],
 ];
 
 grammer["BLOCK"] = [
-  ["whitespace", "STATEMENT?", "BLOCK?"],
+  ["whitespace", "STATEMENT", "BLOCK?"],
 ];
 grammer["STATEMENT"] = [
   ["SIMPLE", "whitespace?", "comment?", "newline"],
@@ -42,13 +42,13 @@ grammer["IF"] = [
     "BLOCK", "ELIF?"],
 ];
 grammer["ELIF"] = [
-  ["whitespace", "reserved:elif", "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
+  ["whitespace?", "reserved:elif", "whitespace", "EXPRESSION", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK", "ELIF?"],
   ["ELSE?"],
 ];
 grammer["ELSE"] = [
-  ["whitespace", "reserved:else", "whitespace?", "punctuation::",
+  ["whitespace?", "reserved:else", "whitespace?", "punctuation::",
     "whitespace?", "comment?", "newline",
     "BLOCK"],
 ];

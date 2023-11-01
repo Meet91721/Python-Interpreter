@@ -6,18 +6,24 @@ import Header from "@/components/header/header";
 
 import { srcOutput } from "@/components/outputs/src";
 import { lexOutput } from "@/components/outputs/lex";
+import { parserOutput } from "@/components/outputs/parser";
 import { reset as lexResetHandle } from "../lex/logic";
+import { reset as parserResetHandle } from "../parser/logic";
 
 import styles from "./src.module.css";
 
 export default function Page() {
   const src = useContext(srcOutput);
   const lex = useContext(lexOutput);
+  const parser = useContext(parserOutput);
   const [Code, setCode] = useState(src.code);
 
   function handleChange(code: string) {
     src.code = code.replace(/\t/g, "    ");
     setCode(src.code);
+
+    lexResetHandle(lex);
+    parserResetHandle(parser);
   }
 
   function resetHandle() {
@@ -39,8 +45,6 @@ for k in range(1000e-2):
 
 input('Press Enter to continue ...')
 `);
-
-    lexResetHandle(lex);
   }
 
   return (

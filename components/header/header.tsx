@@ -20,7 +20,8 @@ import styles from "./header.module.css"
 const stages = [
   { path: '/src', name: "SRC" },
   { path: "/lex", name: "LEX" },
-  { path: "/ast", name: "AST" },
+  { path: "/parser", name: "PARSER" },
+  { path: "/grammar", name: "GRAMMAR" },
 ]
 
 export default function Header({

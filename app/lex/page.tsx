@@ -5,9 +5,8 @@ import { useState, useContext } from "react";
 import Header from "@/components/header/header";
 import { srcOutput } from "@/components/outputs/src";
 import { lexOutput } from "@/components/outputs/lex";
-
-import { astOutput } from "@/components/outputs/ast";
-import { reset as astResetHandle } from "../ast/logic";
+import { parserOutput } from "@/components/outputs/parser";
+import { reset as parserResetHandle } from "../parser/logic";
 
 import { patterns, colorizeToken } from "./patterns";
 import { reset, step, skip, play, pause } from "./logic";
@@ -16,14 +15,14 @@ import styles from "./lex.module.css";
 export default function Page() {
   const { code } = useContext(srcOutput);
   const lex = useContext(lexOutput);
-  const ast = useContext(astOutput);
+  const parser = useContext(parserOutput);
 
   const [Matched, setMatched] = useState<boolean[]>(patterns.map(() => false));
 
   const [Disabled, setDisabled] = useState(lex.iter >= code.length);
   const resetHandle = () => {
     reset(lex, setMatched, setDisabled);
-    astResetHandle(ast);
+    parserResetHandle(parser);
   }
   const stepHandle = () => step(lex, code, setMatched, setDisabled);
   const skipHandle = () => skip(lex, code, setMatched, setDisabled);

@@ -1,22 +1,22 @@
 "use client";
 
-import { AST, NODE } from "@/components/outputs/ast";
+import { AST, NODE } from "@/components/outputs/parser";
 import { LEX } from "@/components/outputs/lex";
 
 declare type GENERATOR = IterableIterator<NODE | undefined>;
 
-let ast: AST;
+let parser: AST;
 let lex: LEX;
 let Push: Function;
 let Pop: Function;
 
 export function* init(
-  _ast: AST,
+  _parser: AST,
   _lex: LEX,
   _Push: Function,
   _Pop: Function,
 ) {
-  ast = _ast;
+  parser = _parser;
   lex = _lex;
   Push = _Push;
   Pop = _Pop;
@@ -37,17 +37,17 @@ function token(lower: string, upper: string) {
   return function* (parent: NODE) {
     const top = Pop() as string;
     if (top === undefined)
-      raise(`Expected token of type ${lower} but stack is empty @${ast.iter}`);
+      raise(`Expected token of type ${lower} but stack is empty @${parser.iter}`);
 
     const [type, expected] = top.split(/^([_a-zA-Z]+)(?::(.*?))?\??$/).filter(x => x);
     const required = top[top.length - 1] !== "?";
     if (type !== lower) {
       if (required)
-        raise(`Expected token of type ${lower} but top of the stack is ${type} @${ast.iter}`);
+        raise(`Expected token of type ${lower} but top of the stack is ${type} @${parser.iter}`);
       else return;
     }
 
-    const token = lex.tokens[ast.iter];
+    const token = lex.tokens[parser.iter];
     if (token.type !== upper) {
       if (required)
         raise(`Expected token of type ${upper} but got ${token.type} @(${token.line}, ${token.column})`);
@@ -62,8 +62,8 @@ function token(lower: string, upper: string) {
     // Consume the token
     const node: NODE = { name: lower, attributes: { lexval: token.lexeme }, children: [] };
     parent.children.push(node);
-    ast.iter++;
-    yield node;
+    parser.iter++;
+    yield;
   }
 }
 
@@ -89,78 +89,98 @@ const punctuation = token("punctuation", "PUNCTUATION");
 function* START(parent?: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type START but stack is empty @${ast.iter}`);
+    raise(`Expected token of type START but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "START") {
     if (required)
-      raise(`Expected token of type START but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type START but top of the stack is ${top} @${parser.iter}`);
+    else return;
+  }
+
+  const lookahead = lex.tokens[parser.iter];
+
+  if (lookahead.type === "EOF") {
+    if (required)
+      raise(`Expected token of type START but got $(EOF) @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "START", attributes: { indent: 0 }, children: [] };
   if (parent) parent.children.push(node);
-  else ast.tree = node;
+  else parser.tree = node;
 
   Push("START?");
-  Push("STATEMENT?");
+  Push("STATEMENT");
   yield;
 
-  try { for (const _ of STATEMENT(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of START(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of STATEMENT(node)) yield;
+  for (const _ of START(node)) yield;
 }
 
 function* BLOCK(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type BLOCK but stack is empty @${ast.iter}`);
+    raise(`Expected token of type BLOCK but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "BLOCK") {
     if (required)
-      raise(`Expected token of type BLOCK but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type BLOCK but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
-  if (lookahead.type !== "WHITESPACE")
-    return;
-  if (lookahead.lexeme.length < (parent.attributes.indent as number))
-    return;
+  if (lookahead.type === "EOF") {
+    if (required)
+      raise(`Expected token of type BLOCK but got $(EOF) @${parser.iter}`);
+    else return;
+  }
+
+  if (lookahead.type !== "WHITESPACE") {
+    if (required)
+      raise(`Expected token of type WHITESPACE but got ${lookahead.type} @${parser.iter}`);
+    else return;
+  }
+  if (lookahead.lexeme.length < (parent.attributes.indent as number)) {
+    if (required)
+      raise(`Expected indentation of ${parent.attributes.indent} but got ${lookahead.lexeme.length} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "BLOCK", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
   Push("BLOCK?");
-  Push("STATEMENT?");
+  Push("STATEMENT");
   Push("whitespace");
   yield;
 
   for (const _ of whitespace(node)) yield;
-  try { for (const _ of STATEMENT(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of BLOCK(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of STATEMENT(node)) yield;
+  for (const _ of BLOCK(node)) yield;
 }
 
 function* STATEMENT(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type STATEMENT but stack is empty @${ast.iter}`);
+    raise(`Expected token of type STATEMENT but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "STATEMENT") {
     if (required)
-      raise(`Expected token of type STATEMENT but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type STATEMENT but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "STATEMENT", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (lookahead.type === "NEWLINE") {
     Push("newline");
@@ -181,33 +201,37 @@ function* STATEMENT(parent: NODE): GENERATOR {
     Push("SIMPLE");
     yield;
     for (const _ of SIMPLE(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-    try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
+    for (const _ of comment(node)) yield;
     for (const _ of newline(node)) yield;
-  } else {
+  } else if (lookahead.type === "RESERVED") {
     Push("COMPOUND");
     yield;
     for (const _ of COMPOUND(node)) yield;
+  } else {
+    if (required)
+      raise(`Expected token of type RESERVED but got ${lookahead.lexeme} @${parser.iter}`);
+    else return
   }
 }
 
 function* SIMPLE(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type SIMPLE but stack is empty @${ast.iter}`);
+    raise(`Expected token of type SIMPLE but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "SIMPLE") {
     if (required)
-      raise(`Expected token of type SIMPLE but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type SIMPLE but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "SIMPLE", attributes: {}, children: [] };
   parent.children.push(node);
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (lookahead.type === "RESERVED") {
     if (lookahead.lexeme === "return") {
@@ -226,10 +250,14 @@ function* SIMPLE(parent: NODE): GENERATOR {
       Push("reserved:break");
       yield;
       for (const _ of reserved(node)) yield;
-    } else {
+    } else if (lookahead.lexeme === "continue") {
       Push("reserved:continue");
       yield;
       for (const _ of reserved(node)) yield;
+    } else {
+      if (required)
+        raise(`Expected token of type SIMPLE but got ${lookahead.lexeme} @${parser.iter}`);
+      else return
     }
   } else if (lookahead.type === "COMMENT") {
     Push("comment");
@@ -242,8 +270,14 @@ function* SIMPLE(parent: NODE): GENERATOR {
   } else if (
     lookahead.type === "IDENTIFIER" &&
     (
-      lex.tokens[ast.iter + 1].type === "ASSIGNMENT" ||
-      lex.tokens[ast.iter + 2].type === "ASSIGNMENT"
+      (
+        parser.iter + 1 < lex.tokens.length &&
+        lex.tokens[parser.iter + 1].type === "ASSIGNMENT"
+      ) ||
+      (
+        parser.iter + 2 < lex.tokens.length &&
+        lex.tokens[parser.iter + 2].type === "ASSIGNMENT"
+      )
     )
   ) {
     Push("EXPRESSION");
@@ -253,34 +287,49 @@ function* SIMPLE(parent: NODE): GENERATOR {
     Push("identifier");
     yield;
     for (const _ of identifier(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of assignment(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of EXPRESSION(node)) yield;
-  } else {
+  } else if (
+    lookahead.type === "IDENTIFIER" ||
+    lookahead.type === "INT" ||
+    lookahead.type === "FLOAT" ||
+    lookahead.type === "STRING" ||
+    lookahead.type === "BOOLEAN" ||
+    lookahead.type === "NONE" ||
+    (
+      lookahead.type === "PUNCTUATION" &&
+      lookahead.lexeme === "("
+    )
+  ) {
     Push("EXPRESSION");
     yield;
     for (const _ of EXPRESSION(node)) yield;
+  } else {
+    if (required)
+      raise(`Expected token of type SIMPLE but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
   }
 }
 
 function* COMPOUND(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type COMPOUND but stack is empty @${ast.iter}`);
+    raise(`Expected token of type COMPOUND but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "COMPOUND") {
     if (required)
-      raise(`Expected token of type COMPOUND but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type COMPOUND but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "COMPOUND", attributes: { indent: (parent.attributes.indent as number) + 4 }, children: [] };
   parent.children.push(node);
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (lookahead.lexeme === "if") {
     Push("IF");
@@ -294,23 +343,27 @@ function* COMPOUND(parent: NODE): GENERATOR {
     Push("FOR");
     yield;
     for (const _ of FOR(node)) yield;
-  } else {
+  } else if (lookahead.lexeme === "def") {
     Push("FUNCTION");
     yield;
     for (const _ of FUNCTION(node)) yield;
+  } else {
+    if (required)
+      raise(`Expected token of type COMPOUND but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
   }
 }
 
 function* IF(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type IF but stack is empty @${ast.iter}`);
+    raise(`Expected token of type IF but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "IF") {
     if (required)
-      raise(`Expected token of type IF but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type IF but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -332,34 +385,40 @@ function* IF(parent: NODE): GENERATOR {
   for (const _ of reserved(node)) yield;
   for (const _ of whitespace(node)) yield;
   for (const _ of EXPRESSION(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of comment(node)) yield;
   for (const _ of newline(node)) yield;
   for (const _ of BLOCK(node)) yield;
-  try { for (const _ of ELIF(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ELIF(node)) yield;
 }
 
 function* ELIF(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type ELIF but stack is empty @${ast.iter}`);
+    raise(`Expected token of type ELIF but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "ELIF") {
     if (required)
-      raise(`Expected token of type ELIF but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type ELIF but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "ELIF", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
-  if (lookahead.lexeme === "elif") {
+  if (
+    lookahead.lexeme === "elif" ||
+    (
+      parser.iter + 1 < lex.tokens.length &&
+      lex.tokens[parser.iter + 1].lexeme === "elif"
+    )
+  ) {
     Push("ELIF?");
     Push("BLOCK");
     Push("newline");
@@ -373,17 +432,17 @@ function* ELIF(parent: NODE): GENERATOR {
     Push("whitespace?");
     yield;
 
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of reserved(node)) yield;
     for (const _ of whitespace(node)) yield;
     for (const _ of EXPRESSION(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of punctuation(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-    try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
+    for (const _ of comment(node)) yield;
     for (const _ of newline(node)) yield;
     for (const _ of BLOCK(node)) yield;
-    try { for (const _ of ELIF(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of ELIF(node)) yield;
   } else {
     Push("ELSE?");
     yield;
@@ -394,20 +453,27 @@ function* ELIF(parent: NODE): GENERATOR {
 function* ELSE(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type ELSE but stack is empty @${ast.iter}`);
+    raise(`Expected token of type ELSE but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "ELSE") {
     if (required)
-      raise(`Expected token of type ELSE but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type ELSE but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   if (
-    lex.tokens[ast.iter].lexeme !== "else" &&
-    lex.tokens[ast.iter + 1].lexeme !== "else"
-  ) return;
+    lex.tokens[parser.iter].lexeme !== "else" &&
+    (
+      parser.iter + 1 >= lex.tokens.length ||
+      lex.tokens[parser.iter + 1].lexeme !== "else"
+    )
+  ) {
+    if (required)
+      raise(`Expected token of type ELSE but got ${lex.tokens[parser.iter].lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "ELSE", attributes: { indent: parent.attributes.indent }, children: [] };
   parent.children.push(node);
@@ -422,12 +488,12 @@ function* ELSE(parent: NODE): GENERATOR {
   Push("whitespace?");
   yield;
 
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of reserved(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of comment(node)) yield;
   for (const _ of newline(node)) yield;
   for (const _ of BLOCK(node)) yield;
 }
@@ -435,13 +501,13 @@ function* ELSE(parent: NODE): GENERATOR {
 function* WHILE(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type WHILE but stack is empty @${ast.iter}`);
+    raise(`Expected token of type WHILE but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "WHILE") {
     if (required)
-      raise(`Expected token of type WHILE but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type WHILE but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -463,25 +529,25 @@ function* WHILE(parent: NODE): GENERATOR {
   for (const _ of reserved(node)) yield;
   for (const _ of whitespace(node)) yield;
   for (const _ of EXPRESSION(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of comment(node)) yield;
   for (const _ of newline(node)) yield;
   for (const _ of BLOCK(node)) yield;
-  try { for (const _ of ELSE(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ELSE(node)) yield;
 }
 
 function* FOR(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type FOR but stack is empty @${ast.iter}`);
+    raise(`Expected token of type FOR but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "FOR") {
     if (required)
-      raise(`Expected token of type FOR but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type FOR but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -511,25 +577,25 @@ function* FOR(parent: NODE): GENERATOR {
   for (const _ of reserved(node)) yield;
   for (const _ of whitespace(node)) yield;
   for (const _ of EXPRESSION(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of comment(node)) yield;
   for (const _ of newline(node)) yield;
   for (const _ of BLOCK(node)) yield;
-  try { for (const _ of ELSE(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ELSE(node)) yield;
 }
 
 function* FUNCTION(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type FUNCTION but stack is empty @${ast.iter}`);
+    raise(`Expected token of type FUNCTION but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "FUNCTION") {
     if (required)
-      raise(`Expected token of type FUNCTION but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type FUNCTION but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -556,16 +622,16 @@ function* FUNCTION(parent: NODE): GENERATOR {
   for (const _ of reserved(node)) yield;
   for (const _ of whitespace(node)) yield;
   for (const _ of identifier(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of ARGS(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of comment(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of comment(node)) yield;
   for (const _ of newline(node)) yield;
   for (const _ of BLOCK(node)) yield;
 }
@@ -573,13 +639,19 @@ function* FUNCTION(parent: NODE): GENERATOR {
 function* ARGS(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type ARGS but stack is empty @${ast.iter}`);
+    raise(`Expected token of type ARGS but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "ARGS") {
     if (required)
-      raise(`Expected token of type ARGS but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type ARGS but top of the stack is ${top} @${parser.iter}`);
+    else return;
+  }
+
+  if (lex.tokens[parser.iter].type !== "IDENTIFIER") {
+    if (required)
+      raise(`Expected token of type ARGS but got ${lex.tokens[parser.iter].lexeme} @${parser.iter}`);
     else return;
   }
 
@@ -591,26 +663,33 @@ function* ARGS(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of identifier(node)) yield;
-  try { for (const _ of ARGS_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ARGS_PRIME(node)) yield;
 }
 
 function* ARGS_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type ARGS_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type ARGS_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "ARGS_PRIME") {
     if (required)
-      raise(`Expected token of type ARGS_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type ARGS_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   if (
-    lex.tokens[ast.iter].lexeme !== "," &&
-    lex.tokens[ast.iter + 1].lexeme !== ","
-  ) return;
+    lex.tokens[parser.iter].lexeme !== "," &&
+    (
+      parser.iter + 1 >= lex.tokens.length ||
+      lex.tokens[parser.iter + 1].lexeme !== ","
+    )
+  ) {
+    if (required)
+      raise(`Expected token of type ARGS_PRIME but got ${lex.tokens[parser.iter].lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "ARGS_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -622,23 +701,23 @@ function* ARGS_PRIME(parent: NODE): GENERATOR {
   Push("whitespace?");
   yield;
 
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of identifier(node)) yield;
-  try { for (const _ of ARGS_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of ARGS_PRIME(node)) yield;
 }
 
 function* FUNCTION_CALL(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type FUNCTION_CALL but stack is empty @${ast.iter}`);
+    raise(`Expected token of type FUNCTION_CALL but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "FUNCTION_CALL") {
     if (required)
-      raise(`Expected token of type FUNCTION_CALL but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type FUNCTION_CALL but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -655,24 +734,41 @@ function* FUNCTION_CALL(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of identifier(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of PARAMS(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of PARAMS(node)) yield;
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
 }
 
 function* PARAMS(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type PARAMS but stack is empty @${ast.iter}`);
+    raise(`Expected token of type PARAMS but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "PARAMS") {
     if (required)
-      raise(`Expected token of type PARAMS but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type PARAMS but top of the stack is ${top} @${parser.iter}`);
+    else return;
+  }
+
+  if (
+    lex.tokens[parser.iter].type !== "IDENTIFIER" &&
+    lex.tokens[parser.iter].type !== "INT" &&
+    lex.tokens[parser.iter].type !== "FLOAT" &&
+    lex.tokens[parser.iter].type !== "STRING" &&
+    lex.tokens[parser.iter].type !== "BOOLEAN" &&
+    lex.tokens[parser.iter].type !== "NONE" &&
+    (
+      lex.tokens[parser.iter].type !== "PUNCTUATION" ||
+      lex.tokens[parser.iter].lexeme !== "("
+    )
+  ) {
+    if (required)
+      raise(`Expected token of type PARAMS but got ${lex.tokens[parser.iter].lexeme} @${parser.iter}`);
     else return;
   }
 
@@ -684,26 +780,33 @@ function* PARAMS(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of EXPRESSION(node)) yield;
-  try { for (const _ of PARAMS_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of PARAMS_PRIME(node)) yield;
 }
 
 function* PARAMS_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type PARAMS_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type PARAMS_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "PARAMS_PRIME") {
     if (required)
-      raise(`Expected token of type PARAMS_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type PARAMS_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   if (
-    lex.tokens[ast.iter].lexeme !== "," &&
-    lex.tokens[ast.iter + 1].lexeme !== ","
-  ) return;
+    lex.tokens[parser.iter].lexeme !== "," &&
+    (
+      parser.iter + 1 >= lex.tokens.length ||
+      lex.tokens[parser.iter + 1].lexeme !== ","
+    )
+  ) {
+    if (required)
+      raise(`Expected token of type PARAMS_PRIME but got ${lex.tokens[parser.iter].lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "PARAMS_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -715,23 +818,23 @@ function* PARAMS_PRIME(parent: NODE): GENERATOR {
   Push("whitespace?");
   yield;
 
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of punctuation(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of EXPRESSION(node)) yield;
-  try { for (const _ of PARAMS_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of PARAMS_PRIME(node)) yield;
 }
 
 function* EXPRESSION(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type EXPRESSION but stack is empty @${ast.iter}`);
+    raise(`Expected token of type EXPRESSION but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "EXPRESSION") {
     if (required)
-      raise(`Expected token of type EXPRESSION but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type EXPRESSION but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -744,29 +847,33 @@ function* EXPRESSION(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of COMPARISION(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of EXPRESSION_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of EXPRESSION_PRIME(node)) yield;
 }
 
 function* EXPRESSION_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type EXPRESSION_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type EXPRESSION_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "EXPRESSION_PRIME") {
     if (required)
-      raise(`Expected token of type EXPRESSION_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type EXPRESSION_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (
     lookahead.lexeme !== "and" &&
     lookahead.lexeme !== "or"
-  ) return;
+  ) {
+    if (required)
+      raise(`Expected token of type EXPRESSION_PRIME but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "EXPRESSION_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -782,22 +889,22 @@ function* EXPRESSION_PRIME(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of operator(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of COMPARISION(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of EXPRESSION_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of EXPRESSION_PRIME(node)) yield;
 }
 
 function* COMPARISION(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type COMPARISION but stack is empty @${ast.iter}`);
+    raise(`Expected token of type COMPARISION but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "COMPARISION") {
     if (required)
-      raise(`Expected token of type COMPARISION but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type COMPARISION but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -810,28 +917,31 @@ function* COMPARISION(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of BITWISE(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of COMPARISION_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of COMPARISION_PRIME(node)) yield;
 }
 
 function* COMPARISION_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type COMPARISION_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type COMPARISION_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
 
   if (type !== "COMPARISION_PRIME") {
     if (required)
-      raise(`Expected token of type COMPARISION_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type COMPARISION_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
-  if (lookahead.type !== "COMPARATOR")
-    return;
+  if (lookahead.type !== "COMPARATOR") {
+    if (required)
+      raise(`Expected token of type COMPARATOR but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "COMPARISION_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -850,27 +960,32 @@ function* COMPARISION_PRIME(parent: NODE): GENERATOR {
     Push("comparator:<");
   else if (lookahead.lexeme === "==")
     Push("comparator:==");
-  else
+  else if (lookahead.lexeme === "!=")
     Push("comparator:!=");
+  else {
+    if (required)
+      raise(`Expected token of type COMPARATOR but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
   yield;
 
   for (const _ of comparator(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of BITWISE(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of COMPARISION_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of COMPARISION_PRIME(node)) yield;
 }
 
 function* BITWISE(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type BITWISE but stack is empty @${ast.iter}`);
+    raise(`Expected token of type BITWISE but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "BITWISE") {
     if (required)
-      raise(`Expected token of type BITWISE but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type BITWISE but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -883,27 +998,30 @@ function* BITWISE(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of OPERAND(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of BITWISE_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of BITWISE_PRIME(node)) yield;
 }
 
 function* BITWISE_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type BITWISE_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type BITWISE_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "BITWISE_PRIME") {
     if (required)
-      raise(`Expected token of type BITWISE_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type BITWISE_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
-  if (lookahead.type !== "BITWISE")
-    return;
+  if (lookahead.type !== "BITWISE") {
+    if (required)
+      raise(`Expected token of type BITWISE but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "BITWISE_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -920,27 +1038,32 @@ function* BITWISE_PRIME(parent: NODE): GENERATOR {
     Push("bitwise:&");
   else if (lookahead.lexeme === "|")
     Push("bitwise:|");
-  else
+  else if (lookahead.lexeme === "^")
     Push("bitwise:^");
+  else {
+    if (required)
+      raise(`Expected token of type BITWISE but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
   yield;
 
   for (const _ of bitwise(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of OPERAND(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of BITWISE_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of BITWISE_PRIME(node)) yield;
 }
 
 function* OPERAND(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type OPERAND but stack is empty @${ast.iter}`);
+    raise(`Expected token of type OPERAND but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "OPERAND") {
     if (required)
-      raise(`Expected token of type OPERAND but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type OPERAND but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -953,29 +1076,33 @@ function* OPERAND(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of TERM(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of OPERAND_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of OPERAND_PRIME(node)) yield;
 }
 
 function* OPERAND_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type OPERAND_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type OPERAND_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "OPERAND_PRIME") {
     if (required)
-      raise(`Expected token of type OPERAND_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type OPERAND_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (
     lookahead.lexeme !== "+" &&
     lookahead.lexeme !== "-"
-  ) return;
+  ) {
+    if (required)
+      raise(`Expected token of type OPERAND_PRIME but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "OPERAND_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -991,22 +1118,22 @@ function* OPERAND_PRIME(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of operator(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of TERM(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of OPERAND_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of OPERAND_PRIME(node)) yield;
 }
 
 function* TERM(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type TERM but stack is empty @${ast.iter}`);
+    raise(`Expected token of type TERM but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "TERM") {
     if (required)
-      raise(`Expected token of type TERM but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type TERM but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
@@ -1019,30 +1146,34 @@ function* TERM(parent: NODE): GENERATOR {
   yield;
 
   for (const _ of FACTOR(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of TERM_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of TERM_PRIME(node)) yield;
 }
 
 function* TERM_PRIME(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type TERM_PRIME but stack is empty @${ast.iter}`);
+    raise(`Expected token of type TERM_PRIME but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "TERM_PRIME") {
     if (required)
-      raise(`Expected token of type TERM_PRIME but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type TERM_PRIME but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
   if (
     lookahead.lexeme !== "*" &&
     lookahead.lexeme !== "//" &&
     lookahead.lexeme !== "/" &&
     lookahead.lexeme !== "%"
-  ) return;
+  ) {
+    if (required)
+      raise(`Expected token of type TERM_PRIME but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
 
   const node: NODE = { name: "TERM_PRIME", attributes: {}, children: [] };
   parent.children.push(node);
@@ -1057,34 +1188,39 @@ function* TERM_PRIME(parent: NODE): GENERATOR {
     Push("operator://");
   else if (lookahead.lexeme === "/")
     Push("operator:/");
-  else
+  else if (lookahead.lexeme === "%")
     Push("operator:%");
+  else {
+    if (required)
+      raise(`Expected token of type TERM_PRIME but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
+  }
   yield;
 
   for (const _ of operator(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
   for (const _ of FACTOR(node)) yield;
-  try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
-  try { for (const _ of TERM_PRIME(node)) yield; } catch (e) { /* pass */ }
+  for (const _ of whitespace(node)) yield;
+  for (const _ of TERM_PRIME(node)) yield;
 }
 
 function* FACTOR(parent: NODE): GENERATOR {
   const top = Pop() as string;
   if (top === undefined)
-    raise(`Expected token of type FACTOR but stack is empty @${ast.iter}`);
+    raise(`Expected token of type FACTOR but stack is empty @${parser.iter}`);
 
   const [type, _] = top.split(/^([_a-zA-Z]+)(\??)$/).filter(x => x);
   const required = _ !== "?";
   if (type !== "FACTOR") {
     if (required)
-      raise(`Expected token of type FACTOR but top of the stack is ${top} @${ast.iter}`);
+      raise(`Expected token of type FACTOR but top of the stack is ${top} @${parser.iter}`);
     else return;
   }
 
   const node: NODE = { name: "FACTOR", attributes: {}, children: [] };
   parent.children.push(node);
 
-  const lookahead = lex.tokens[ast.iter];
+  const lookahead = lex.tokens[parser.iter];
 
   if (lookahead.lexeme === "(") {
     Push("punctuation:)");
@@ -1095,9 +1231,9 @@ function* FACTOR(parent: NODE): GENERATOR {
     yield;
 
     for (const _ of punctuation(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of EXPRESSION(node)) yield;
-    try { for (const _ of whitespace(node)) yield; } catch (e) { /* pass */ }
+    for (const _ of whitespace(node)) yield;
     for (const _ of punctuation(node)) yield;
   } else if (lookahead.type === "NONE") {
     Push("none");
@@ -1124,10 +1260,16 @@ function* FACTOR(parent: NODE): GENERATOR {
     yield;
 
     for (const _ of string(node)) yield;
-  } else {
+  } else if (lookahead.type === "IDENTIFIER") {
     if (
-      lex.tokens[ast.iter + 1].lexeme === "(" ||
-      lex.tokens[ast.iter + 2].lexeme === "("
+      (
+        parser.iter + 1 < lex.tokens.length &&
+        lex.tokens[parser.iter + 1].lexeme === "("
+      ) ||
+      (
+        parser.iter + 2 < lex.tokens.length &&
+        lex.tokens[parser.iter + 2].lexeme === "("
+      )
     ) {
       Push("FUNCTION_CALL");
       yield;
@@ -1139,5 +1281,9 @@ function* FACTOR(parent: NODE): GENERATOR {
 
       for (const _ of identifier(node)) yield;
     }
+  } else {
+    if (required)
+      raise(`Expected token of type FACTOR but got ${lookahead.lexeme} @${parser.iter}`);
+    else return;
   }
 }

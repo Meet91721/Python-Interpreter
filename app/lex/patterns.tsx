@@ -37,7 +37,7 @@ export const patterns: PATTERN[] = [
 const indexLookup = patterns.reduce((acc, { type }, i) => {
   acc[type] = i;
   return acc;
-}, { "UNKNOWN": -1 } as Record<string, number>);
+}, { "UNKNOWN": -1, "EOF": -1 } as Record<string, number>);
 
 // Assign a color to each pattern
 const gradient = 360 / patterns.length;

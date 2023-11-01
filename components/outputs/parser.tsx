@@ -23,4 +23,4 @@ const context: AST = {
   tree: null,
 };
 
-export const astOutput = createContext(context);
+export const parserOutput = createContext(context);
