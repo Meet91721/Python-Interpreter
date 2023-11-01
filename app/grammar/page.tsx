@@ -14,7 +14,7 @@ export default function Page() {
     return (
         <>
             <Header />
-            <div>
+            <div >
                 <h2>Grammar: </h2>
                 <ul>
                     {Object.entries(grammer).map(([key, value]) => (
@@ -22,7 +22,7 @@ export default function Page() {
                             <strong>{key} -&gt; </strong>
 
                             {value.map((list, ind) => (
-                                <span>
+                                <span key={ind}>
                                     {ind < value.length - 1 ? (<span>{list.join(' ')} | </span>) : (<span>{list.join(' ')} </span>)}
                                 </span>
 

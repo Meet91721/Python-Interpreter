@@ -20,7 +20,7 @@ body {
   background: linear-gradient(135deg,
       var(--python-yellow) 0%,
       var(--python-blue) 100%);
-
+  background-attachment: fixed;
   display: flex;
   flex-direction: column;
 }

@@ -1,6 +1,4 @@
-import {
-  GRAMMAR,
-} from "@/components/outputs/parser";
+import { GRAMMAR } from "@/components/outputs/parser";
 
 // Grammer for python like language
 export const grammer: GRAMMAR = {};

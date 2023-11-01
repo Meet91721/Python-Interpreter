@@ -1,7 +1,7 @@
 "use client";
 
-import { AST, NODE } from "@/components/outputs/parser";
 import { LEX } from "@/components/outputs/lex";
+import { AST, NODE } from "@/components/outputs/parser";
 
 declare type GENERATOR = IterableIterator<NODE | undefined>;
 
