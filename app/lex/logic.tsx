@@ -30,12 +30,19 @@ export function step(
   if (lex.iter >= code.length) {
     setDisabled(true);
 
-    if (lex.tokens[lex.tokens.length - 1].type !== "EOF")
+    if (lex.tokens[lex.tokens.length - 1].type !== "EOF") {
+      // insert lexeme for newline
+      lex.tokens.push({
+        type: "NEWLINE", re: /./,
+        lexeme: "\n",
+        line: lex.line, column: lex.column,
+      });
       lex.tokens.push({
         type: "EOF", re: /./,
         lexeme: "$",
         line: lex.line, column: lex.column,
       });
+    }
 
     return;
   }
@@ -107,12 +114,18 @@ export function step(
 
   if (lex.iter >= code.length) {
     setDisabled(true);
-    if (lex.tokens[lex.tokens.length - 1].type !== "EOF")
+    if (lex.tokens[lex.tokens.length - 1].type !== "EOF") {
+      lex.tokens.push({
+        type: "NEWLINE", re: /./,
+        lexeme: "\n",
+        line: lex.line, column: lex.column,
+      });
       lex.tokens.push({
         type: "EOF", re: /./,
         lexeme: "$",
         line: lex.line, column: lex.column,
       });
+    }
   }
 }
 
